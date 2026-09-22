@@ -21,13 +21,8 @@ create policy "Public read access"
   using (true);
 
 insert into public.restaurants (name, cuisine, neighborhood, price_range, rating) values
-  ('Joe''s Shanghai',      'Chinese',     'Chinatown',        '$$',   4.3),
   ('Xi''an Famous Foods',  'Chinese',     'Morningside',      '$',    4.5),
   ('Community Food & Juice','American',   'Morningside',      '$$',   4.1),
   ('Le Monde',             'French',      'Morningside',      '$$',   4.0),
   ('Thai Market',          'Thai',        'Upper West Side',  '$$',   4.2),
-  ('Absolute Bagels',      'Bakery',      'Upper West Side',  '$',    4.6),
-  ('Katz''s Delicatessen', 'Deli',        'Lower East Side',  '$$$',  4.4),
-  ('Lucali',               'Pizza',       'Carroll Gardens',  '$$$',  4.8),
-  ('Di Fara Pizza',        'Pizza',       'Midwood',          '$$',   4.5),
-  ('Sylvia''s',            'Soul Food',   'Harlem',           '$$',   4.2);
+  ('Absolute Bagels',      'Bakery',      'Upper West Side',  '$',    4.6);
