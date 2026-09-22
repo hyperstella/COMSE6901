@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hello World",
-  description: "Hello World app deployed on Vercel",
+  title: "Restaurants",
+  description: "Restaurant list fetched from Supabase",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
