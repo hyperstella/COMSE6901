@@ -1,4 +1,4 @@
-import { getSupabaseClient, type Restaurant } from "@/lib/supabase";
+import { getSupabaseClient, type Restaurant } from "@/lib/supabase/public";
 
 // Fetch on each request so the page reflects the live table rather than
 // a snapshot baked in at build time.

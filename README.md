@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# COMSE6901 — Restaurants
 
-## Getting Started
+Next.js (App Router) + Supabase. The restaurant list at `/` is public. Signing in with Google
+creates a row in `profiles` through a database trigger. New users are asked for their first and last
+name. `/dashboard` and `/profile` require a signed-in user.
 
-First, run the development server:
+## How sign-in works
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. `/login` shows Google's "Sign in with Google" button (Google Identity Services, redirect mode).
+2. Google POSTs the ID token to **`/auth/callback`**. The route handler calls
+   `supabase.auth.signInWithIdToken`, which only needs the Google **Client ID**, not a Client Secret.
+3. The session is stored in cookies through `@supabase/ssr`. `src/proxy.ts` refreshes it on each
+   request and redirects signed-out visitors away from protected routes.
+4. If `first_name` or `last_name` is empty, the user is sent to `/onboarding`.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Profile photos are uploaded to the Supabase Storage bucket `avatars`. Only their public URL is saved
+in `profiles.avatar_url`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. **Database:** run `supabase/profiles.sql` in the Supabase SQL editor.
+2. **Google OAuth client** (Google Cloud Console → APIs & Services → Credentials → OAuth client ID →
+   Web application):
+   - Authorized JavaScript origins: `http://localhost`, `http://localhost:3000`, and your Vercel URL(s)
+   - Authorized redirect URIs: `http://localhost:3000/auth/callback` and `https://<vercel-url>/auth/callback`
+3. **Supabase:** Authentication → Sign In / Providers → Google → turn it on, paste the Client ID into
+   *Client IDs*, and leave the secret empty.
+4. **Environment variables** (in `.env.local` and in Vercel):
 
-## Learn More
+   | Variable | Where to find it |
+   | --- | --- |
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API (server-only; used for photo uploads) |
+   | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google Cloud Console |
 
-To learn more about Next.js, take a look at the following resources:
+5. Start the app:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+   ```bash
+   npm run dev
+   ```
