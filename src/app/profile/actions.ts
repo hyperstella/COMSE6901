@@ -35,10 +35,16 @@ export async function updateName(
     return { error: "Please enter both your first and last name." };
   }
 
-  const { error } = await supabase
+  // Upsert so the save works even if the trigger row is somehow missing.
+  const { error } = await createAdminClient()
     .from("profiles")
-    .update({ first_name, last_name, updated_at: new Date().toISOString() })
-    .eq("id", user.id);
+    .upsert({
+      id: user.id,
+      email: user.email,
+      first_name,
+      last_name,
+      updated_at: new Date().toISOString(),
+    });
   if (error) return { error: error.message };
 
   revalidatePath("/", "layout");
@@ -79,16 +85,20 @@ export async function uploadAvatar(
     data: { publicUrl },
   } = admin.storage.from("avatars").getPublicUrl(path);
 
-  const { data: existing } = await supabase
+  const { data: existing } = await admin
     .from("profiles")
     .select("avatar_url")
     .eq("id", user.id)
     .maybeSingle();
 
-  const { error } = await supabase
+  const { error } = await admin
     .from("profiles")
-    .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
-    .eq("id", user.id);
+    .upsert({
+      id: user.id,
+      email: user.email,
+      avatar_url: publicUrl,
+      updated_at: new Date().toISOString(),
+    });
   if (error) return { error: error.message };
 
   // Remove the previous photo so old uploads don't pile up.

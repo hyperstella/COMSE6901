@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { createAdminClient } from "@/lib/supabase/server";
 
 /**
  * Google Identity Services (redirect mode) POSTs the signed-in user's ID
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
   }
 
   // First-time users (no name yet) are sent to fill in their profile.
-  const { data: profile } = await supabase
+  const { data: profile } = await createAdminClient()
     .from("profiles")
     .select("first_name, last_name")
     .eq("id", data.user.id)

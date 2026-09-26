@@ -41,8 +41,10 @@ export async function createClient() {
 }
 
 /**
- * Service-role client for Storage uploads. Bypasses RLS, so it must only
- * run on the server and only after the caller has been authenticated.
+ * Service-role client. Bypasses RLS, so it must only run on the server and
+ * only after the caller has been authenticated with getUser(). Used for the
+ * profiles table (RLS is on with no policies yet) and Storage uploads; every
+ * query is scoped to the authenticated user's id.
  */
 export function createAdminClient() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -62,7 +64,7 @@ export async function getUserAndProfile() {
 
   if (!user) return { supabase, user: null, profile: null };
 
-  const { data: profile } = await supabase
+  const { data: profile } = await createAdminClient()
     .from("profiles")
     .select("id, email, first_name, last_name, avatar_url")
     .eq("id", user.id)
