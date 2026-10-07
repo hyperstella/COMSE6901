@@ -51,7 +51,7 @@ function Roof({ b }: { b: Building }) {
       return <rect x={x} y={y} width={w} height={h} fill="#e9e1cd" stroke="#c9bc9f" strokeWidth={0.04} />;
     case "low": {
       // the terrace, then the Greek cross set toward its back (+s), as in the 3D book
-      const size = Math.min(h, w - 0.4) * 0.9;
+      const size = Math.min(h - 0.1, w - 0.45);
       const lx = x + w - size - 0.06;
       const lcx = lx + size / 2;
       const a = size * 0.29;
@@ -91,13 +91,17 @@ function Roof({ b }: { b: Building }) {
     case "cottage":
       return <rect x={x} y={y} width={w} height={h} fill="#7d858d" stroke="#646b72" strokeWidth={0.04} />;
     case "glass":
-      // Lerner: brick, with its glass ramp wall facing the campus
+      // Lerner: brick, a copper-roofed wing on Broadway, and its glass ramp wall at the campus end
       return (
         <g>
           <rect x={x} y={y} width={w} height={h} fill="#a4553e" stroke="#8a4533" strokeWidth={0.04} />
-          <rect x={cx - w * 0.26} y={y + h - 0.04} width={w * 0.52} height={0.22} fill="#8ea5b5" stroke="#6f8797" strokeWidth={0.03} />
+          <rect x={x} y={y} width={w} height={0.6} fill="#8fcab4" stroke="#6ea893" strokeWidth={0.03} />
+          <rect x={x + w - 0.04} y={y + 0.6 + (h - 0.6) * 0.1} width={0.22} height={(h - 0.6) * 0.8} fill="#8ea5b5" stroke="#6f8797" strokeWidth={0.03} />
         </g>
       );
+    case "rotunda":
+      // University Hall: a D, flat side to the south
+      return <path d={`M${x} ${y}A${w} ${h / 2} 0 0 1 ${x} ${y + h}Z`} fill="#5b6165" stroke="#3f4447" strokeWidth={0.04} />;
     case "tower":
       return (
         <g>
@@ -220,21 +224,24 @@ export default function CampusPlan({
         <rect x={-0.5} y={-0.5} width={S + 1} height={E + 1} fill="#e9e3d4" />
         <rect x={0} y={0} width={S} height={E} fill="#e4d8bf" />
         <rect x={COLLEGE_WALK.s0} y={-0.5} width={COLLEGE_WALK.s1 - COLLEGE_WALK.s0} height={E + 1} fill="#a9503d" />
-        <rect x={7.05} y={3.65} width={1.5} height={2.95} fill="#a54c3a" />
+        <rect x={6.72} y={-0.5} width={0.26} height={E + 1} fill="#b9b4aa" />
+        {/* Low Plaza: pale stone, a brick field of squares, then the steps */}
+        <rect x={COLLEGE_WALK.s1} y={3.0} width={9.6 - COLLEGE_WALK.s1} height={4.45} fill="#ddd2bc" />
+        <rect x={7.88} y={4.2} width={0.82} height={2.1} fill="#a54c3a" />
         <g fill="none" stroke="#d6917a" strokeWidth={0.03}>
-          {Array.from({ length: 3 }, (_, i) =>
-            Array.from({ length: 6 }, (_, j) => <rect key={`${i}-${j}`} x={7.1 + i * 0.5} y={3.7 + j * 0.49} width={0.4} height={0.4} />),
+          {Array.from({ length: 2 }, (_, i) =>
+            Array.from({ length: 5 }, (_, j) => <rect key={`${i}-${j}`} x={7.92 + i * 0.41} y={4.24 + j * 0.41} width={0.33} height={0.33} />),
           )}
         </g>
-        <rect x={8.55} y={3.65} width={0.9} height={2.95} fill="#ebe3d0" />
+        <rect x={8.7} y={4.25} width={0.9} height={2.0} fill="#ebe3d0" />
         {Array.from({ length: 6 }, (_, i) => (
-          <rect key={i} x={8.55 + i * 0.15} y={3.65} width={0.02} height={2.95} fill="#d3c7ad" />
+          <rect key={i} x={8.7 + i * 0.15} y={4.25} width={0.02} height={2.0} fill="#d3c7ad" />
         ))}
         {LAWNS.map((l, i) => (
           <rect key={i} x={l.s0} y={l.e0} width={l.s1 - l.s0} height={l.e1 - l.e0} fill="#4f8a44" stroke="#3f7438" strokeWidth={0.03} />
         ))}
         {BUILDINGS.map((b) => (
-          <Roof key={b.name} b={b} />
+          <Roof key={`${b.name}-${b.s0}`} b={b} />
         ))}
         <g className="font-display" fontSize={0.34} fill="#33403f" textAnchor="middle" dominantBaseline="middle" pointerEvents="none">
           {BUILDINGS.filter((b) => LABELED.has(b.name)).map((b) => (

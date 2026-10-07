@@ -773,32 +773,40 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
       ctx.fillStyle = rnd() < 0.5 ? `rgba(120,95,60,${rnd() * 0.06})` : `rgba(255,255,255,${rnd() * 0.1})`;
       ctx.fillRect(rnd() * W, rnd() * H, 2, 2);
     }
-    // College Walk: red brick with stone edging
+    // College Walk: brick sidewalks and a paved lane down the middle, with
+    // stone edging (its lawn strips are meshes)
     ctx.fillStyle = "#a9503d";
     rect(COLLEGE_WALK.s0, -WALK, COLLEGE_WALK.s1, E + WALK);
     ctx.fillStyle = "rgba(255,230,210,0.08)";
     for (let e = -WALK; e < E + WALK; e += 0.12) rect(COLLEGE_WALK.s0, e, COLLEGE_WALK.s1, e + 0.05);
+    ctx.fillStyle = "#b9b4aa";
+    rect(6.72, -WALK, 6.98, E + WALK);
     ctx.fillStyle = "#d8c9ad";
     rect(COLLEGE_WALK.s0 - 0.04, 0, COLLEGE_WALK.s0, E);
     rect(COLLEGE_WALK.s1, 0, COLLEGE_WALK.s1 + 0.04, E);
-    // Low Plaza: brick with stone diamonds
-    const [px0, pz0] = at(7.05, 3.75);
-    const [px1, pz1] = at(8.55, 6.75);
+    // Low Plaza: pale stone, with a brick field of squares in front of the steps
+    ctx.fillStyle = "#ddd2bc";
+    rect(COLLEGE_WALK.s1, 3.0, 9.6, 7.45);
+    const [px0, pz0] = at(7.88, 4.2);
+    const [px1, pz1] = at(8.7, 6.3);
     ctx.fillStyle = "#a54c3a";
     ctx.fillRect(px0, pz0, px1 - px0, pz1 - pz0);
     ctx.strokeStyle = "#d6917a";
     ctx.lineWidth = 3;
-    const cell = 0.5 * k;
+    const cell = 0.41 * k;
     for (let x = px0 + cell * 0.1; x < px1 - cell * 0.5; x += cell) {
       for (let y = pz0 + cell * 0.1; y < pz1 - cell * 0.5; y += cell) {
         ctx.strokeRect(x, y, cell * 0.8, cell * 0.8);
         ctx.strokeRect(x + cell * 0.2, y + cell * 0.2, cell * 0.4, cell * 0.4);
       }
     }
-    // brick paths: the east walk past Buell and St. Paul's, and the walk behind Low
+    // brick paths: the east walk past Buell and St. Paul's, the west walk
+    // between Low and its lawns, and the cross walk north of Low
     ctx.fillStyle = "#b25a45";
-    rect(6.98, 6.95, 16.9, 7.15);
-    rect(12.75, 1.1, 13.0, 7.15);
+    rect(COLLEGE_WALK.s1, 7.4, 9.3, 7.55);
+    rect(9.25, 6.95, 16.7, 7.15);
+    rect(9.4, 3.25, 14.2, 3.4);
+    rect(14.2, 0.85, 14.4, 9.6);
     // lawns are separate meshes; paint a darker bed under them for crisp edges
     ctx.fillStyle = "rgba(70,60,40,0.25)";
     for (const l of LAWNS) rect(l.s0 - 0.03, l.e0 - 0.03, l.s1 + 0.03, l.e1 + 0.03);
@@ -945,7 +953,7 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
       const ld = w; // front to back
       const terrace = 0.3;
       inner.add(box(lw, terrace, ld, lime, 0, terrace / 2, 0));
-      const size = Math.min(lw, ld - 0.4) * 0.9;
+      const size = Math.min(lw - 0.1, ld - 0.45);
       const zc = -(ld - size) / 2 + 0.06; // sits at the back, leaving the top of the steps in front
       const mh = b.h * 0.78;
       const armN = body(size * 0.58, size, mh, "stone", terrace);
@@ -1074,18 +1082,38 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
       return g;
     },
     glass(b, w, d) {
-      // Lerner: brick and granite toward Broadway, with a glass wall on the
-      // campus side (+z) that shows the switchback ramps inside
+      // Lerner: brick and granite, with a copper-roofed wing along Broadway
+      // (-z) and a glass wall at the campus end (+x) that shows the
+      // switchback ramps inside
       const g = new THREE.Group();
       g.add(body(w, d, b.h, "lerner"));
       g.add(box(w + 0.1, 0.1, d + 0.1, limeShade, 0, b.h + 0.05, 0));
-      const gw = w * 0.52;
+      const wing = 0.6;
+      const roof = new THREE.Mesh(hipRoof(w + 0.1, wing + 0.1, 0.24), roofMat("#97d3bd"));
+      roof.position.set(0, b.h + 0.1, -d / 2 + wing / 2);
+      g.add(roof);
+      const gw = (d - wing) * 0.8;
       const gh = b.h * 0.94;
       const gd = 0.22;
       const ramps = faceMat(gw, gh, "ramps");
       const frame = std("#dcdedd", { roughness: 0.5, metalness: 0.2 });
-      g.add(box(gw, gh, gd, [frame, frame, frame, frame, ramps, frame], 0, gh / 2, d / 2 + gd / 2 - 0.02));
-      g.add(box(gw + 0.08, 0.06, gd + 0.06, frame, 0, gh + 0.03, d / 2 + gd / 2 - 0.02));
+      const zc = wing / 2;
+      g.add(box(gd, gh, gw, [ramps, frame, frame, frame, frame, frame], w / 2 + gd / 2 - 0.02, gh / 2, zc));
+      g.add(box(gd + 0.06, 0.06, gw + 0.08, frame, w / 2 + gd / 2 - 0.02, gh + 0.03, zc));
+      return g;
+    },
+    rotunda(b, w, d) {
+      // University Hall: a low D-shaped gym, round side to the north (+x)
+      const g = new THREE.Group();
+      const r = d / 2;
+      const side = faceMat(Math.PI * r, b.h, "modern");
+      const roof = std("#4a5054", { roughness: 0.8 });
+      const half = new THREE.Mesh(new THREE.CylinderGeometry(r, r, b.h, 24, 1, false, 0, Math.PI), [side, roof, roof]);
+      half.scale.x = w / r;
+      half.position.set(-w / 2, b.h / 2, 0);
+      g.add(half);
+      g.add(box(0.06, b.h, d, side, -w / 2 + 0.03, b.h / 2, 0));
+      g.add(box(0.08, 0.06, d + 0.04, trim, -w / 2 + 0.04, b.h + 0.03, 0));
       return g;
     },
     tower(b, w, d) {
@@ -1110,10 +1138,10 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
   // Low Steps, the Alma Mater, fountains and flagpoles
   {
     const g = new THREE.Group();
-    const s0 = 8.55;
+    const s0 = 8.7;
     const s1 = 9.6;
-    const zc = Z((3.75 + 6.75) / 2);
-    const width = 6.75 - 3.75;
+    const zc = Z((4.25 + 6.25) / 2);
+    const width = 6.25 - 4.25;
     const n = 6;
     const depth = (s1 - s0) / n;
     for (let i = 0; i < n; i++) {
@@ -1123,25 +1151,25 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     const am = new THREE.Group();
     am.add(box(0.3, 0.2, 0.3, limeShade, 0, 0.1, 0));
     am.add(cylinder(0.08, 0.3, std("#c99a3a", { metalness: 0.45, roughness: 0.4 }), 0, 0.35, 0, 8, 0.05));
-    am.position.set(X(9.05), 0.15, zc);
+    am.position.set(X(9.0), 0.1, zc);
     g.add(am);
     g.position.y = G;
     pop(shadowed(g), 420);
 
-    for (const dz of [-1.15, 1.15]) {
+    for (const dz of [-1.05, 1.05]) {
       const f = new THREE.Group();
       f.add(cylinder(0.3, 0.08, lime, 0, 0.04, 0, 24));
       f.add(cylinder(0.25, 0.02, std("#8fb7c9", { roughness: 0.25, metalness: 0.1 }), 0, 0.085, 0, 24));
       f.add(cylinder(0.04, 0.2, lime, 0, 0.12, 0, 8));
-      f.position.set(X(7.6), G, zc + dz);
+      f.position.set(X(8.28), G, zc + dz);
       pop(shadowed(f, false, true), 480);
     }
-    for (const dz of [-1.6, 1.6]) {
+    for (const dz of [-1.9, 1.9]) {
       const pole = cylinder(0.018, 1.7, std("#d9d6d0", { metalness: 0.4, roughness: 0.4 }), 0, 0.85, 0, 6);
       const flag = box(0.004, 0.2, 0.3, std("#7aa7c7"), 0, 1.55, 0.16);
       const f = new THREE.Group();
       f.add(pole, flag);
-      f.position.set(X(7.2), G, zc + dz);
+      f.position.set(X(7.65), G, zc + dz);
       pop(shadowed(f, true, false), 560);
     }
   }
@@ -1183,7 +1211,7 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     s > a.s0 - pad && s < a.s1 + pad && e > a.e0 - pad && e < a.e1 + pad;
   const blocked = (s: number, e: number, pad = 0.18) =>
     BUILDINGS.some((b) => inside(s, e, b, pad)) ||
-    inside(s, e, { s0: 7.0, s1: 9.6, e0: 3.6, e1: 6.9 }, 0) || // plaza and steps
+    inside(s, e, { s0: COLLEGE_WALK.s1, s1: 9.6, e0: 2.95, e1: 7.5 }, 0) || // plaza and steps
     (e > 6.92 && e < 7.18 && s > 6.9 && s < 16.95) || // the east walk
     (s > COLLEGE_WALK.s0 - 0.02 && s < COLLEGE_WALK.s1 + 0.02);
 
@@ -1210,29 +1238,25 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     tryTree(COLLEGE_WALK.s0 - 0.13, e, "round", 0.78 + rnd() * 0.12);
     tryTree(COLLEGE_WALK.s1 + 0.13, e + 0.3, "round", 0.78 + rnd() * 0.12);
   }
-  // South Field: a ring of trees around the four lawns, and the cross walks
-  for (let e = 2.85; e <= 7.7; e += 0.55) {
-    tryTree(2.08, e);
-    tryTree(6.24, e);
+  // South Field: trees along its east and west edges, and in front of Butler
+  for (let s = 3.2; s <= 5.8; s += 0.52) {
+    tryTree(s, 3.1, "round", 0.75 + rnd() * 0.2);
+    tryTree(s + 0.26, 7.18, "round", 0.75 + rnd() * 0.2);
   }
-  for (let s = 2.5; s <= 6.0; s += 0.55) {
-    tryTree(s, 2.82);
-    tryTree(s, 7.66);
-  }
-  for (let s = 2.5; s <= 6.0; s += 1.1) tryTree(s, 5.25, "round", 0.7);
+  for (let e = 3.7; e <= 6.8; e += 0.78) tryTree(2.75, e, "round", 0.7);
   const cluster = (s0: number, s1: number, e0: number, e1: number, n: number, pine = 0.15) => {
     for (let i = 0; i < n; i++) tryTree(s0 + rnd() * (s1 - s0), e0 + rnd() * (e1 - e0), rnd() < pine ? "pine" : "round");
   };
-  cluster(2.2, 4.8, 7.85, 8.4, 5); // Van Am Quad
-  cluster(9.35, 12.45, 2.8, 3.5, 9); // Low's west lawn
-  cluster(10.55, 11.95, 7.4, 7.9, 4); // Low's east lawn, in front of St. Paul's
-  cluster(15.25, 16.85, 5.05, 6.8, 8, 0.25); // north lawn
-  cluster(12.8, 13.15, 3.2, 6.9, 6); // behind Low
-  cluster(7.2, 8.6, 2.5, 3.5, 5); // between Dodge and the plaza
-  cluster(9.0, 10.8, 1.3, 2.6, 4); // by Earl
-  cluster(14.2, 16.5, 7.3, 8.0, 5); // the east walk
-  cluster(9.4, 10.6, 0.05, 0.2, 2);
-  cluster(16.85, 17.15, 0.3, 10.2, 7, 0.2); // north of the lawns
+  cluster(2.2, 5.0, 8.7, 9.55, 9); // Van Am Quad
+  cluster(3.4, 4.9, 1.85, 2.85, 2); // Furnald Lawn
+  cluster(9.5, 10.6, 1.5, 3.1, 6); // by Lewisohn
+  cluster(12.2, 13.9, 1.45, 3.15, 7); // Low's west lawn
+  cluster(10.85, 11.9, 7.3, 7.8, 3); // Low's east lawn, in front of St. Paul's
+  cluster(13.3, 13.95, 3.5, 6.6, 5); // behind Low
+  cluster(12.2, 14.1, 8.55, 9.6, 6); // Avery's courtyard
+  cluster(16.0, 16.6, 7.25, 9.5, 4); // by Schermerhorn
+  cluster(17.25, 19.0, 1.0, 3.7, 6); // Pupin Plaza
+  cluster(9.6, 10.6, 8.4, 9.6, 3); // between Buell and Philosophy
 
   trees.sort((a, b) => a.x - b.x);
   // Decorative trees standing where a Treendr tree has been pinned step aside.
