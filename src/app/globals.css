@@ -1,26 +1,365 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ palette
+   The storybook: cream paper and slate ink on a cool morning backdrop, with
+   the book cover's green, Columbia brick, mint roofs and a valentine pink. */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #e9eef1;
+  --bg-2: #d5dde3;
+  --paper: #f6f0e3;
+  --paper-2: #ece3d0;
+  --ink: #2f3b3a;
+  --ink-2: #5a6664;
+  --ink-3: #8a9391;
+  --line: rgb(47 59 58 / 0.14);
+  --accent: #1e4d46;
+  --accent-ink: #f6f0e3;
+  --brick: #b45e44;
+  --mint: #97d3bd;
+  --lawn: #3f7d38;
+  --like: #d9566d;
+  --like-ink: #fff6f2;
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.36 0 0 0 0 0.22 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-brick: var(--brick);
+  --color-mint: var(--mint);
+  --color-lawn: var(--lawn);
+  --color-like: var(--like);
+  --color-like-ink: var(--like-ink);
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-instrument-serif), ui-serif, Georgia, serif;
+  --font-wordmark: var(--font-dm-serif), ui-serif, Georgia, serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
+  background: var(--bg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100svh;
+  background: radial-gradient(120% 70% at 50% 0%, #f1f4f6 0%, var(--bg) 45%, var(--bg-2) 100%) fixed;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* --------------------------------------------------------------- the kit */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.012em;
+  line-height: 0.95;
+}
+
+/* The Treendr wordmark. */
+.wordmark {
+  font-family: var(--font-wordmark);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 0.9;
+}
+
+/* A sheet of the book's paper. */
+.card {
+  background: var(--grain), var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.65),
+    0 1px 2px rgb(40 50 60 / 0.06),
+    0 18px 36px -22px rgb(40 50 60 / 0.45);
+}
+
+.well {
+  background: var(--grain), var(--paper-2);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 3px rgb(40 35 25 / 0.12);
+}
+
+.btn {
+  --face: var(--accent);
+  --face-ink: var(--accent-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.62rem 1.2rem;
+  border-radius: 999px;
+  background: var(--face);
+  color: var(--face-ink);
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.1;
+  cursor: pointer;
+  user-select: none;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    0 8px 18px -10px color-mix(in srgb, var(--face) 80%, black);
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+.btn:active,
+.btn[data-pressed="true"] {
+  transform: translateY(1px) scale(0.98);
+}
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+.btn-paper {
+  --face: var(--paper);
+  --face-ink: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.7),
+    0 6px 14px -10px rgb(40 50 60 / 0.5);
+}
+.btn-like {
+  --face: var(--like);
+  --face-ink: var(--like-ink);
+}
+.btn-ghost {
+  --face: transparent;
+  --face-ink: var(--ink-2);
+  box-shadow: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.field {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffaf0;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+  box-shadow: inset 0 1px 2px rgb(40 35 25 / 0.08);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.field:focus {
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 1px 2px rgb(40 35 25 / 0.08),
+    0 0 0 3px rgb(30 77 70 / 0.15);
+}
+
+.photo {
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--ink);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 18px 36px -22px rgb(40 50 60 / 0.55);
+}
+
+.rule {
+  height: 1px;
+  background: var(--line);
+}
+
+/* Field notes from the vision model, set like a naturalist's journal. */
+.notes {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.3rem;
+  line-height: 1.4;
+}
+
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -0.12em;
+  background: currentColor;
+  animation: blink 0.9s steps(1) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* --------------------------------------------------------------- animation */
+
+.pop-in {
+  animation: pop-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+}
+
+.rise {
+  animation: rise 0.55s ease-out both;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.bob {
+  animation: bob 1.4s ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes bob {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.shake {
+  animation: shake 0.4s ease both;
+}
+@keyframes shake {
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+.float-heart {
+  animation: float-heart 1.2s ease-out both;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes float-heart {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.5);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(0, -10px) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx, 0px), -140px) scale(0.9) rotate(var(--rot, 0deg));
+  }
+}
+
+/* The book opening when a page loads. */
+.page-in {
+  animation: page-in 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: perspective(900px) rotateX(8deg) translateY(14px);
+  }
+}
+
+.plan-pin-active {
+  animation: plan-pin 1.6s ease-in-out infinite;
+  transform-box: fill-box;
+}
+@keyframes plan-pin {
+  50% {
+    translate: 0 -0.12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .plan-label {
+    display: none;
+  }
+}
+
+/* Range inputs in the storybook controls. */
+input[type="range"].dial {
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 22%, transparent);
+  accent-color: var(--brick);
+}
+input[type="range"].dial::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--brick);
+  border: 2px solid var(--paper);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+  cursor: pointer;
+}
+input[type="range"].dial::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--brick);
+  border: 2px solid var(--paper);
+  cursor: pointer;
 }

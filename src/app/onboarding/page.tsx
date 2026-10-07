@@ -10,9 +10,10 @@ export default async function OnboardingPage() {
   if (isProfileComplete(profile)) redirect("/dashboard");
 
   return (
-    <main className="mx-auto w-full max-w-xl px-6 py-16">
-      <h1 className="text-2xl font-bold tracking-tight">Welcome! What should we call you?</h1>
-      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+    <main className="mx-auto w-full max-w-xl px-4 py-16">
+      <div className="card p-6 sm:p-8">
+      <h1 className="display italic text-5xl">Welcome! What should we call you?</h1>
+      <p className="mt-2 text-ink-2">
         Add your first and last name to finish setting up your account. You can
         change them any time from your profile.
       </p>
@@ -23,6 +24,7 @@ export default async function OnboardingPage() {
           redirectTo="/dashboard"
           submitLabel="Continue"
         />
+      </div>
       </div>
     </main>
   );

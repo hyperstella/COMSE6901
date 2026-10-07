@@ -11,12 +11,13 @@ export default async function ProfilePage() {
   if (!user) redirect("/login");
 
   return (
-    <main className="mx-auto w-full max-w-xl px-6 py-16">
-      <h1 className="text-3xl font-bold tracking-tight">Profile</h1>
-      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
+    <main className="mx-auto w-full max-w-xl px-4 py-12">
+      <div className="card p-6 sm:p-8">
+      <h1 className="display italic text-6xl">Your profile</h1>
+      <p className="mt-1 text-ink-2">{user.email}</p>
 
       <section className="mt-10">
-        <h2 className="font-semibold">Photo</h2>
+        <h2 className="display italic text-3xl">Photo</h2>
         <div className="mt-4 flex items-center gap-6">
           <Avatar profile={profile} size={80} />
           <div className="flex-1">
@@ -25,8 +26,9 @@ export default async function ProfilePage() {
         </div>
       </section>
 
-      <section className="mt-10 border-t border-gray-200 pt-10 dark:border-gray-800">
-        <h2 className="font-semibold">Name</h2>
+      <section className="mt-10">
+        <div className="rule mb-8" />
+        <h2 className="display italic text-3xl">Name</h2>
         <div className="mt-4">
           <NameForm
             firstName={profile?.first_name ?? ""}
@@ -34,6 +36,7 @@ export default async function ProfilePage() {
           />
         </div>
       </section>
+      </div>
     </main>
   );
 }

@@ -35,17 +35,15 @@ export async function updateName(
     return { error: "Please enter both your first and last name." };
   }
 
-  // Upsert so the save works even if the trigger row is somehow missing.
-  const { error } = await createAdminClient()
+  // Runs as the user: RLS only lets them update their own row, and only
+  // the name columns. The row itself is created by the sign-up trigger.
+  const { data: updated, error } = await supabase
     .from("profiles")
-    .upsert({
-      id: user.id,
-      email: user.email,
-      first_name,
-      last_name,
-      updated_at: new Date().toISOString(),
-    });
+    .update({ first_name, last_name, updated_at: new Date().toISOString() })
+    .eq("id", user.id)
+    .select("id");
   if (error) return { error: error.message };
+  if (!updated?.length) return { error: "Profile not found. Try signing out and back in." };
 
   revalidatePath("/", "layout");
 
@@ -91,14 +89,12 @@ export async function uploadAvatar(
     .eq("id", user.id)
     .maybeSingle();
 
+  // avatar_url is server-written only (users have no UPDATE right on it),
+  // so it can only ever point at a photo this action uploaded.
   const { error } = await admin
     .from("profiles")
-    .upsert({
-      id: user.id,
-      email: user.email,
-      avatar_url: publicUrl,
-      updated_at: new Date().toISOString(),
-    });
+    .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
+    .eq("id", user.id);
   if (error) return { error: error.message };
 
   // Remove the previous photo so old uploads don't pile up.

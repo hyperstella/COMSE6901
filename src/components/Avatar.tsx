@@ -21,7 +21,7 @@ export default function Avatar({
         alt="Profile photo"
         width={size}
         height={size}
-        className="shrink-0 rounded-full object-cover"
+        className="shrink-0 rounded-full object-cover ring-1 ring-line"
         style={{ width: size, height: size }}
       />
     );
@@ -29,7 +29,7 @@ export default function Avatar({
 
   return (
     <span
-      className="flex shrink-0 items-center justify-center rounded-full bg-gray-200 font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+      className="flex shrink-0 items-center justify-center rounded-full bg-accent font-semibold text-accent-ink"
       style={{ width: size, height: size, fontSize: size * 0.4 }}
     >
       {initials}

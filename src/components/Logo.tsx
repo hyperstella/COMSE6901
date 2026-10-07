@@ -1,0 +1,15 @@
+/** Treendr's mark: a tree whose canopy is a heart. */
+export default function Logo({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} aria-hidden>
+      <ellipse cx="16" cy="29.2" rx="7" ry="1.6" fill="#2f3b3a" opacity="0.15" />
+      <path d="M15 29V19.5h2V29z" fill="#6e4d35" />
+      <path d="M16 13.5 13.2 11M16 15l3-2.6" stroke="#6e4d35" strokeWidth="1.2" strokeLinecap="round" />
+      <path
+        d="M16 24.5C5.6 18.4 4.4 10.3 9.2 7.2c3-2 5.6-.6 6.8 1.6 1.2-2.2 3.8-3.6 6.8-1.6 4.8 3.1 3.6 11.2-6.8 17.3Z"
+        fill="#d9566d"
+      />
+      <path d="M10.2 9.4c1.2-1 2.6-1 3.4-.2" stroke="#fff6f2" strokeWidth="1.3" strokeLinecap="round" fill="none" opacity="0.8" />
+    </svg>
+  );
+}

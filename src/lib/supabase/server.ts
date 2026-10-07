@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 export type Profile = {
   id: string;
@@ -12,7 +13,8 @@ export type Profile = {
 
 /**
  * Supabase client bound to the current user's session cookies. Use in
- * Server Components, Server Actions and Route Handlers.
+ * Server Components, Server Actions and Route Handlers. Queries run as the
+ * signed-in user (or anon), so row level security applies.
  */
 export async function createClient() {
   const cookieStore = await cookies();
@@ -42,9 +44,9 @@ export async function createClient() {
 
 /**
  * Service-role client. Bypasses RLS, so it must only run on the server and
- * only after the caller has been authenticated with getUser(). Used for the
- * profiles table (RLS is on with no policies yet) and Storage uploads; every
- * query is scoped to the authenticated user's id.
+ * only after the caller has been authenticated with getUser(). Used for
+ * Storage uploads and for writing AI-generated images and captions, which
+ * users are not allowed to write themselves.
  */
 export function createAdminClient() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -55,8 +57,11 @@ export function createAdminClient() {
   });
 }
 
-/** Returns the signed-in user and their profile row, or nulls. */
-export async function getUserAndProfile() {
+/**
+ * Returns the signed-in user and their profile row, or nulls. Cached per
+ * request so the header and the page share one auth round trip.
+ */
+export const getUserAndProfile = cache(async () => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -64,14 +69,15 @@ export async function getUserAndProfile() {
 
   if (!user) return { supabase, user: null, profile: null };
 
-  const { data: profile } = await createAdminClient()
+  // RLS lets a user read only their own profile row.
+  const { data: profile } = await supabase
     .from("profiles")
     .select("id, email, first_name, last_name, avatar_url")
     .eq("id", user.id)
     .maybeSingle<Profile>();
 
   return { supabase, user, profile };
-}
+});
 
 export function isProfileComplete(profile: Profile | null) {
   return Boolean(profile?.first_name?.trim() && profile?.last_name?.trim());

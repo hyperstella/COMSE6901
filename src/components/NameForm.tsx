@@ -3,8 +3,7 @@
 import { useActionState } from "react";
 import { updateName, type FormState } from "@/app/profile/actions";
 
-const inputClass =
-  "mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900 dark:border-gray-700 dark:focus:border-gray-100 dark:focus:ring-gray-100";
+const inputClass = "field mt-1.5";
 
 export default function NameForm({
   firstName,
@@ -26,7 +25,7 @@ export default function NameForm({
     <form action={action} className="space-y-4">
       {redirectTo && <input type="hidden" name="redirect_to" value={redirectTo} />}
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block text-sm font-medium">
+        <label className="block text-sm text-ink-2">
           First name
           <input
             name="first_name"
@@ -37,7 +36,7 @@ export default function NameForm({
             className={inputClass}
           />
         </label>
-        <label className="block text-sm font-medium">
+        <label className="block text-sm text-ink-2">
           Last name
           <input
             name="last_name"
@@ -52,12 +51,12 @@ export default function NameForm({
       <div className="flex items-center gap-3">
         <button
           disabled={pending}
-          className="rounded-full bg-gray-900 px-5 py-2 text-sm text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300"
+          className="btn"
         >
           {pending ? "Saving…" : submitLabel}
         </button>
-        {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-        {state.success && <p className="text-sm text-green-600">{state.success}</p>}
+        {state.error && <p className="text-sm text-like">{state.error}</p>}
+        {state.success && <p className="text-sm text-accent-2">{state.success}</p>}
       </div>
     </form>
   );

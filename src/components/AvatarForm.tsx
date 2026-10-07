@@ -16,19 +16,19 @@ export default function AvatarForm() {
         name="avatar"
         accept="image/jpeg,image/png,image/webp,image/gif"
         required
-        className="block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm hover:file:bg-gray-200 dark:file:bg-gray-800 dark:file:text-gray-200"
+        className="block w-full text-sm text-ink-2 file:mr-3 file:border-0 file:bg-paper-2 file:px-3 file:py-1.5 file:font-[inherit] file:text-ink file:shadow-[0_0_0_2px_var(--ink)] hover:file:bg-paper"
       />
       <div className="flex items-center gap-3">
         <button
           disabled={pending}
-          className="rounded-full border border-gray-300 px-5 py-2 text-sm hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-900"
+          className="btn btn-paper text-sm"
         >
           {pending ? "Uploading…" : "Upload photo"}
         </button>
-        {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-        {state.success && <p className="text-sm text-green-600">{state.success}</p>}
+        {state.error && <p className="text-sm text-like">{state.error}</p>}
+        {state.success && <p className="text-sm text-accent-2">{state.success}</p>}
       </div>
-      <p className="text-xs text-gray-500">JPEG, PNG, WebP or GIF, up to 4MB.</p>
+      <p className="text-xs text-ink-3">JPEG, PNG, WebP or GIF, up to 4MB.</p>
     </form>
   );
 }

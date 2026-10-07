@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { NEXT_COOKIE, safeNextPath } from "@/lib/next-path";
 
 /**
  * Google Identity Services (redirect mode) POSTs the signed-in user's ID
@@ -27,8 +27,11 @@ export async function POST(request: NextRequest) {
     return fail("Failed CSRF check. Please try again.");
   }
 
-  // Build the redirect first so the session cookies land on it.
-  const response = NextResponse.redirect(new URL("/dashboard", request.url), 303);
+  // Build the redirect first so the session cookies land on it. The login
+  // page stores where the user was headed in a short-lived cookie.
+  const next = safeNextPath(request.cookies.get(NEXT_COOKIE)?.value) ?? "/dashboard";
+  const response = NextResponse.redirect(new URL(next, request.url), 303);
+  response.cookies.delete(NEXT_COOKIE);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,8 +59,9 @@ export async function POST(request: NextRequest) {
     return fail(error?.message ?? "Sign-in failed.");
   }
 
-  // First-time users (no name yet) are sent to fill in their profile.
-  const { data: profile } = await createAdminClient()
+  // First-time users (no name yet) are sent to fill in their profile. The
+  // client now carries the new session, so RLS lets it read this one row.
+  const { data: profile } = await supabase
     .from("profiles")
     .select("first_name, last_name")
     .eq("id", data.user.id)
