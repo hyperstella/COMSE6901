@@ -5,6 +5,8 @@ const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
   : "*.supabase.co";
 
 const nextConfig: NextConfig = {
+  // Lets a second `next dev` run beside the main one (Next refuses to share a build dir).
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   images: {
     // Uploaded photos are served from public Supabase Storage buckets.
     remotePatterns: [
