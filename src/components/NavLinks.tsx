@@ -23,7 +23,7 @@ export default function NavLinks() {
               href={href}
               aria-current={active ? "page" : undefined}
               className={`block rounded-full px-3 py-1.5 text-sm transition-colors ${
-                active ? "bg-ink text-paper" : "text-ink-2 hover:bg-ink/5 hover:text-ink"
+                active ? "bg-accent text-accent-ink" : "text-ink-2 hover:bg-ink/5 hover:text-ink"
               }`}
             >
               {label}

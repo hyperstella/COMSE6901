@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import Header from "@/components/Header";
-import { dmSerif, instrument, instrumentSerif } from "./fonts";
+import { instrument, instrumentSerif } from "./fonts";
 
 export const metadata: Metadata = {
   title: {
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${dmSerif.variable} ${instrumentSerif.variable} ${instrument.variable} h-full`}>
+    <html lang="en" className={`${instrumentSerif.variable} ${instrument.variable} h-full`}>
       <body className="flex min-h-full flex-col">
         <Header />
         <div className="flex flex-1 flex-col">{children}</div>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getUserAndProfile } from "@/lib/supabase/server";
 import Avatar from "./Avatar";
+import HeaderShell from "./HeaderShell";
 import Logo from "./Logo";
 import NavLinks from "./NavLinks";
 import SoundControls from "./SoundControls";
@@ -9,11 +10,11 @@ export default async function Header() {
   const { user, profile } = await getUserAndProfile();
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line bg-paper/80 backdrop-blur-md backdrop-saturate-150">
+    <HeaderShell>
       <nav className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-3 sm:gap-5 sm:px-6">
-        <Link href="/" className="group flex shrink-0 items-center gap-1.5" aria-label="Treendr home">
-          <Logo className="h-8 w-8 transition-transform group-hover:-rotate-6" />
-          <span className="wordmark hidden text-[1.75rem] sm:inline">Treendr</span>
+        <Link href="/" className="group flex shrink-0 items-center gap-1" aria-label="Treendr home">
+          <Logo className="h-8 w-8 origin-bottom transition-transform group-hover:-rotate-6" />
+          <span className="wordmark hidden text-2xl text-accent sm:inline">Treendr</span>
         </Link>
 
         <NavLinks />
@@ -38,6 +39,6 @@ export default async function Header() {
           )}
         </div>
       </nav>
-    </header>
+    </HeaderShell>
   );
 }

@@ -14,7 +14,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       <div className="card w-full max-w-sm p-8 text-center">
         <Logo className="mx-auto h-16 w-16" />
         <h1 className="display mt-4 text-6xl">
-          Join <span className="wordmark not-italic">Treendr</span>
+          Join <span className="wordmark not-italic text-accent">Treendr</span>
         </h1>
         <p className="mt-3 text-ink-2">
           {nextPath
