@@ -1,3 +1,4 @@
+import Link from "next/link";
 import SwipeDeck from "@/components/SwipeDeck";
 import { getUserAndProfile } from "@/lib/supabase/server";
 import type { Card } from "@/lib/types";
@@ -66,11 +67,23 @@ export default async function SwipePage({ searchParams }: PageProps<"/swipe">) {
     cards = [...first, ...cards.filter((c) => !firstIds.has(c.caption_id))];
   }
 
+  // One screen tall, so the card shrinks to fit and the buttons are never below the fold.
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-      <div className="mb-8 text-center">
-        <h1 className="display italic text-6xl">Swipe</h1>
-        <p className="mt-1 text-ink-2">Right if the line makes you laugh. Left if it doesn&apos;t.</p>
+    <main className="mx-auto flex h-[calc(100svh-3.5rem-var(--tabbar))] min-h-[540px] w-full max-w-6xl flex-col px-4 pb-4 pt-2 sm:px-6 sm:pt-4">
+      <div className="mb-5 shrink-0 text-center">
+        <h1 className="display sr-only text-5xl italic sm:not-sr-only">Swipe</h1>
+        <p className="text-sm text-ink-2 sm:mt-1 sm:text-base">
+          Right if the line makes you laugh. Left if it doesn&apos;t.
+          {!user && (
+            <>
+              {" "}
+              <Link href="/login?next=/swipe" className="font-semibold text-accent underline decoration-accent/30 underline-offset-4 hover:decoration-accent">
+                Sign in
+              </Link>{" "}
+              to save your votes.
+            </>
+          )}
+        </p>
       </div>
       <SwipeDeck key={typeof tree === "string" ? tree : "all"} initialCards={cards} signedIn={Boolean(user)} />
     </main>

@@ -21,11 +21,14 @@ export default function CaptionVoter({
   initialVote,
   initialTally,
   signedIn,
+  next,
 }: {
   captionId: string;
   initialVote: Vote;
   initialTally: Tally;
   signedIn: boolean;
+  /** Where to come back to after signing in; defaults to this page's path. */
+  next?: string;
 }) {
   const pathname = usePathname();
   const [vote, setVote] = useState<Vote>(initialVote);
@@ -81,7 +84,7 @@ export default function CaptionVoter({
         </button>
       </div>
       {error && <p className="text-xs text-like">{error}</p>}
-      <SignInPrompt open={signInOpen} onClose={() => setSignInOpen(false)} next={pathname} />
+      <SignInPrompt open={signInOpen} onClose={() => setSignInOpen(false)} next={next ?? pathname} />
     </div>
   );
 }

@@ -15,7 +15,16 @@ const THRESHOLD = 100;
 const FLY_MS = 320;
 
 type Burst = { id: number; dx: number; delay: number };
+/** One swipe, so it can be undone. vote 0 is a skip; `saved` settles once the vote is written. */
+type Swipe = { at: number; card: Card; vote: -1 | 0 | 1; saved: Promise<unknown> };
 let uid = 0;
+
+/** Long lines get smaller type so they still fit a short card. */
+function lineSize(text: string) {
+  if (text.length > 140) return "text-[1.3rem] leading-[1.15]";
+  if (text.length > 90) return "text-[1.6rem] leading-[1.1]";
+  return "text-[1.9rem] leading-[1.08]";
+}
 
 export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Card[]; signedIn: boolean }) {
   const [queue, setQueue] = useState(initialCards);
@@ -27,6 +36,7 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
   const [signInOpen, setSignInOpen] = useState(false);
   const [exhausted, setExhausted] = useState(false);
   const [pressed, setPressed] = useState<-1 | 1 | null>(null);
+  const [history, setHistory] = useState<Swipe[]>([]);
 
   const cardRef = useRef<HTMLElement>(null);
   const likeStamp = useRef<HTMLSpanElement>(null);
@@ -89,7 +99,10 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
       paint(skip ? 0 : vote * width * 1.6, skip ? 600 : (drag.current?.dy ?? 0) + 40, true);
       drag.current = null;
       setTimeout(advance, FLY_MS - 40);
-      if (skip) return;
+      if (skip) {
+        setHistory((h) => [...h, { at: index, card, vote: 0, saved: Promise.resolve() }]);
+        return;
+      }
 
       if (vote === 1) {
         likeSound();
@@ -100,7 +113,9 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
         passSound();
       }
 
-      const res = await castVote(card.caption_id, vote);
+      const saved = castVote(card.caption_id, vote);
+      setHistory((h) => [...h, { at: index, card, vote, saved }]);
+      const res = await saved;
       if (!res.ok) {
         if (res.needsSignIn) setSignInOpen(true);
         else setToast({ text: res.error, tone: "error" });
@@ -128,16 +143,40 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
         }
       }
     },
-    [card, leaving, signedIn, advance],
+    [card, index, leaving, signedIn, advance],
   );
 
-  // Keyboard: right/L like, left/J pass, down/S skip.
+  /** Brings back the last card and takes back its vote. */
+  const undo = useCallback(async () => {
+    const last = history.at(-1);
+    if (!last || leaving) return;
+    setHistory((h) => h.slice(0, -1));
+    setIndex(last.at);
+    if (last.vote === 0) return;
+
+    if (last.vote === 1) {
+      const count = likedByTree.current.get(last.card.image_id) ?? 0;
+      likedByTree.current.set(last.card.image_id, Math.max(0, count - 1));
+    }
+    setToast({ text: `Took back your ${last.vote === 1 ? "like" : "pass"}`, tone: "pass" });
+    // Let the original vote land first, so the two writes can't arrive out of order.
+    await last.saved.catch(() => {});
+    const res = await castVote(last.card.caption_id, 0);
+    if (!res.ok) setToast({ text: res.error, tone: "error" });
+  }, [history, leaving]);
+
+  // Keyboard: right/L like, left/J pass, down/S skip, Backspace or (⌘/ctrl-)Z undo.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || signInOpen || match) return;
+      if (e.altKey || signInOpen || match) return;
       if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
       const key = e.key.toLowerCase();
-      if (key === "arrowright" || key === "l") {
+      const mod = e.metaKey || e.ctrlKey;
+      if (key === "z" || (key === "backspace" && !mod)) {
+        void undo();
+      } else if (mod) {
+        return;
+      } else if (key === "arrowright" || key === "l") {
         setPressed(1);
         void commit(1);
       } else if (key === "arrowleft" || key === "j") {
@@ -155,7 +194,7 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onUp);
     };
-  }, [commit, signInOpen, match]);
+  }, [commit, undo, signInOpen, match]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (leaving) return;
@@ -184,13 +223,14 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
     if (fresh.length) {
       setQueue(fresh);
       setIndex(0);
+      setHistory([]);
       setExhausted(false);
     }
   };
 
   return (
-    <div className="relative mx-auto w-full max-w-[400px]">
-      <div className="relative h-[min(620px,72svh)] min-h-[460px]">
+    <div className="relative mx-auto flex min-h-0 w-full max-w-[400px] flex-1 flex-col">
+      <div className="relative max-h-[620px] min-h-[340px] flex-1">
         {next && (
           <article className="card absolute inset-0 flex flex-col overflow-hidden opacity-80" style={{ transform: "translateY(14px) scale(0.95) rotate(-1.5deg)" }} aria-hidden>
             <TreePhoto src={next.image_url} alt="" sizes="400px" className="h-[56%] shrink-0" />
@@ -232,9 +272,9 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
                 NOPE
               </span>
             </div>
-            <div className="flex flex-1 flex-col justify-center px-5 py-4">
+            <div className="flex min-h-0 flex-1 flex-col justify-center px-5 py-4">
               {card.prompt && <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-3">{card.prompt}</p>}
-              <p className="display mt-1.5 text-balance text-[1.9rem] leading-[1.08] text-ink">{card.content}</p>
+              <p className={`display mt-1.5 text-balance text-ink ${lineSize(card.content)}`}>{card.content}</p>
               <Link
                 href={`/trees/${card.image_id}`}
                 onPointerDown={(e) => e.stopPropagation()}
@@ -295,32 +335,57 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
         )}
       </div>
 
-      {card && (
-        <div className="mt-6 flex items-center justify-center gap-5">
+      {(card || history.length > 0) && (
+        <div className="mt-4 flex shrink-0 items-center justify-center gap-3 sm:mt-5 sm:gap-4">
+          <button
+            onClick={() => void undo()}
+            disabled={!history.length || Boolean(leaving)}
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-2 text-sm font-semibold text-ink-2 transition-colors hover:bg-ink/5 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Undo your last swipe (Backspace)"
+            title="Undo (Backspace)"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M9 14 4 9l5-5" />
+              <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+            </svg>
+            Undo
+          </button>
           <button
             onClick={() => void commit(-1)}
+            disabled={!card}
             data-pressed={pressed === -1}
             className="btn btn-paper h-16 w-16 p-0 text-2xl"
             aria-label="Pass (left arrow)"
+            title="Pass (←)"
           >
             ✕
           </button>
-          <button onClick={() => void commit(-1, true)} className="text-sm text-ink-3 underline decoration-dotted underline-offset-4 hover:text-ink">
-            skip
-          </button>
           <button
             onClick={() => void commit(1)}
+            disabled={!card}
             data-pressed={pressed === 1}
             className="btn btn-like h-16 w-16 p-0"
             aria-label="Like (right arrow)"
+            title="Like (→)"
           >
             <Heart className="h-7 w-7" />
           </button>
+          <button
+            onClick={() => void commit(-1, true)}
+            disabled={!card}
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-2 text-sm font-semibold text-ink-2 transition-colors hover:bg-ink/5 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Skip without voting (down arrow)"
+            title="Skip (↓)"
+          >
+            Skip
+            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 5v14M6 13l6 6 6-6" />
+            </svg>
+          </button>
         </div>
       )}
-      <p className="mt-4 hidden text-center text-sm text-ink-3 sm:block">
-        Drag the card, or use ← pass · → like · ↓ skip
-        {!signedIn && " · sign in to vote"}
+      <p className="mt-3 hidden shrink-0 text-center text-sm text-ink-3 sm:block">
+        Drag the card, or use ← pass · → like · ↓ skip · ⌫ undo
       </p>
 
       {match && <MatchModal card={match} onClose={() => setMatch(null)} />}

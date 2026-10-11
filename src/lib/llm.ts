@@ -213,6 +213,7 @@ Each answer is a caption people will vote on, so make every one funny:
 - Tree-life humor is welcome (squirrels, leaf blowers, photosynthesis, roots, shade, students napping underneath), and so are campus references (finals in Butler, the Steps, the Core), but don't force one into every line.
 - Keep it good-natured: tease the tree and the situation, never people's bodies, race, gender, age or other identity traits.
 - No hashtags, no emoji, and no surrounding quotation marks.
+- "Two truths and a lie" is three short claims separated by commas or periods, like "I've survived 80 winters, I love squirrels, I've never dropped a leaf on a student." Don't number them or say which one is the lie.
 
 Reply with JSON only, shaped like {"name": "...", "age": 80, "species": "...", "bio": "...", "prompts": [{"prompt": "My most irrational fear", "answer": "..."}]}.`;
 

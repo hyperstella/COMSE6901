@@ -164,7 +164,7 @@ export default function CampusBook({ serif, trees, error }: { serif: string; tre
 
   return (
     <section
-      className="relative h-[calc(100svh-3.5rem)] min-h-[560px] w-full overflow-hidden"
+      className="relative h-[calc(100svh-3.5rem-var(--tabbar))] min-h-[520px] w-full overflow-hidden"
       style={{
         background: `radial-gradient(110% 85% at 45% 30%, ${backdrop[0]}, ${backdrop[1]})`,
         transition: "background 600ms",
@@ -173,7 +173,7 @@ export default function CampusBook({ serif, trees, error }: { serif: string; tre
     >
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 block h-full w-full cursor-grab touch-none active:cursor-grabbing"
+        className="absolute inset-0 block h-full w-full cursor-grab touch-pan-y active:cursor-grabbing"
         style={{ imageRendering: pixel ? "pixelated" : "auto" }}
         aria-label="A 3D pop-up book of Columbia's Morningside campus. Drag to turn it; hearts mark trees on Treendr."
       />
@@ -248,7 +248,7 @@ export default function CampusBook({ serif, trees, error }: { serif: string; tre
           </Link>
         )}
         <p className="mt-3 border-t border-line pt-2 text-[11px] leading-snug text-ink-3">
-          Hover a heart to meet a tree, click to see its profile. Drag to turn the book.
+          Hover a heart to meet a tree, click to see its profile. Drag to turn the book; pinch or ⌘-scroll to zoom.
         </p>
       </aside>
 

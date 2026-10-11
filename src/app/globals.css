@@ -20,6 +20,8 @@
   --lawn: #3f7d38;
   --like: #d9566d;
   --like-ink: #fff6f2;
+  /* Height of the bottom tab bar, which only phones get. */
+  --tabbar: 0px;
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.36 0 0 0 0 0.22 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -48,8 +50,15 @@ html {
   background: var(--bg);
 }
 
+@media (max-width: 639px) {
+  :root {
+    --tabbar: calc(4rem + env(safe-area-inset-bottom));
+  }
+}
+
 body {
   min-height: 100svh;
+  padding-bottom: var(--tabbar);
   background: radial-gradient(120% 70% at 50% 0%, #f1f4f6 0%, var(--bg) 45%, var(--bg-2) 100%) fixed;
   color: var(--ink);
   font-family: var(--font-sans);

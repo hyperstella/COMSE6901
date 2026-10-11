@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import "./globals.css";
 import Header from "@/components/Header";
@@ -12,6 +12,9 @@ export const metadata: Metadata = {
   description:
     "A dating app for the trees of Columbia's campus. Snap a tree, let AI write its dating profile, and swipe on the best lines.",
 };
+
+// Lets the phone tab bar sit above the home indicator (see --tabbar in globals.css).
+export const viewport: Viewport = { viewportFit: "cover" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

@@ -486,6 +486,14 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
   const viewDir = new THREE.Vector3(-12.5, 22, 19.5).normalize();
   let userMoved = false;
 
+  // The book fills the screen, so a plain scroll wheel moves the page past it.
+  // Only a trackpad pinch or ⌘/ctrl + wheel reaches the controls and zooms.
+  // (Registered before OrbitControls so it runs first.)
+  const onWheel = (e: WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) e.stopImmediatePropagation();
+  };
+  canvas.addEventListener("wheel", onWheel, { capture: true });
+
   const controls = new OrbitControls(camera, canvas);
   controls.target.set(0.2, -1.2, 2.2);
   controls.enableDamping = true;
@@ -499,6 +507,10 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
   controls.rotateSpeed = 0.55;
   controls.zoomSpeed = 0.6;
   controls.addEventListener("start", () => (userMoved = true));
+  // OrbitControls sets touch-action: none, which traps phones on the book. pan-y
+  // gives vertical swipes back to the page; sideways drags and pinches still
+  // reach the controls (the browser sends pointercancel when it takes a scroll).
+  canvas.style.touchAction = "pan-y";
 
   // ---------------------------------------------------------------- lights
   const hemi = new THREE.HemisphereLight("#d4e2ef", "#e2cfae", 0.9);
@@ -1814,6 +1826,7 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("pointerleave", onLeave);
+      canvas.removeEventListener("wheel", onWheel, { capture: true });
       controls.dispose();
       composer.dispose();
       renderer.dispose();
