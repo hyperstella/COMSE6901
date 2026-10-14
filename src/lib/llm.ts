@@ -18,6 +18,8 @@ type Provider = {
   client: OpenAI;
   visionModel: string;
   textModel: string;
+  /** Tried once when the main model is overloaded (503) or rate limited. */
+  fallbackModel?: string;
   /** Extra request fields only this provider understands. */
   extra: (step: "describe" | "write") => Record<string, unknown>;
 };
@@ -36,6 +38,7 @@ function getProvider(): Provider | null {
       client: new OpenAI({ apiKey, baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/" }),
       visionModel: model,
       textModel: model,
+      fallbackModel: process.env.GEMINI_FALLBACK_MODEL ?? "gemini-3.5-flash-lite",
       // Gemini 3 always thinks a little; keep the description quick and
       // give the jokes a bit more room.
       extra: (step) => ({ reasoning_effort: step === "describe" ? "low" : "medium" }),
@@ -70,6 +73,17 @@ function provider() {
   return p;
 }
 
+/** Runs a model call; if the provider is overloaded, tries the fallback model once. */
+async function withFallback<T>(p: Provider, model: string, call: (model: string) => Promise<T>): Promise<T> {
+  try {
+    return await call(model);
+  } catch (error) {
+    const busy = error instanceof OpenAI.APIError && (error.status === 503 || error.status === 429);
+    if (!busy || !p.fallbackModel || p.fallbackModel === model) throw error;
+    return call(p.fallbackModel);
+  }
+}
+
 /** Turns provider/network failures into messages fit for the UI. */
 function explain(error: unknown, p: Provider): never {
   if (error instanceof UploadError) throw error;
@@ -80,7 +94,7 @@ function explain(error: unknown, p: Provider): never {
         : "Couldn't reach the model provider. Try again in a moment.",
     );
   }
-  if (error instanceof OpenAI.RateLimitError) {
+  if (error instanceof OpenAI.RateLimitError || (error instanceof OpenAI.APIError && error.status === 503)) {
     throw new UploadError("The AI is getting a lot of requests. Try again in a minute.");
   }
   if (error instanceof OpenAI.NotFoundError && p.name === "ollama") {
@@ -117,9 +131,9 @@ export async function describeImage(
   let released = false;
 
   try {
-    const stream = await p.client.chat.completions.create(
+    const stream = await withFallback(p, p.visionModel, (model) => p.client.chat.completions.create(
       {
-        model: p.visionModel,
+        model,
         stream: true,
         temperature: 0.4,
         max_completion_tokens: 2000,
@@ -136,7 +150,7 @@ export async function describeImage(
         ...p.extra("describe"),
       },
       { signal },
-    );
+    ));
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content;
@@ -229,9 +243,9 @@ export async function writeProfile(
   let content: string | null | undefined;
 
   try {
-    const completion = await p.client.chat.completions.create(
+    const completion = await withFallback(p, p.textModel, (model) => p.client.chat.completions.create(
       {
-        model: p.textModel,
+        model,
         temperature: 0.9,
         max_completion_tokens: 4000,
         response_format: {
@@ -248,7 +262,7 @@ export async function writeProfile(
         ...p.extra("write"),
       },
       { signal },
-    );
+    ));
     content = completion.choices[0]?.message?.content;
   } catch (error) {
     explain(error, p);
@@ -277,4 +291,93 @@ export async function writeProfile(
     bio: clip(parsed.bio, 200),
     prompts,
   };
+}
+
+/** What a user tells the trees about themselves (the "About you" profile). */
+export type Person = { firstName: string; about: string; vibes: string[]; hangout: string };
+
+/** A tree as the matchmaker sees it: its AI-written profile, not the photo. */
+export type TreeForMatching = {
+  id: string;
+  name: string;
+  age: number;
+  species: string | null;
+  spot: string | null;
+  bio: string | null;
+  lines: { prompt: string | null; content: string }[];
+};
+
+const Compat = z.object({
+  matches: z.array(z.object({ key: z.string(), score: z.number(), reason: z.string() })),
+});
+
+const COMPAT_SYSTEM = `You are the matchmaker for Treendr, a dating app where Columbia University students date the trees on campus. You get one person's dating profile and several trees' dating profiles. Rate how compatible the person is with each tree.
+
+For every tree, give:
+- score: 0 to 100. Use the whole range: a typical person has a couple of trees above 80, most in the middle, and a couple below 40. Base it on real overlap (shared haunts on campus, matching vibes and habits, complementary quirks), not on which tree is funniest.
+- reason: one playful line under 18 words, addressed to the person as "you", naming the specific thing you two share or clash on. No emoji, no quotation marks.
+
+Keep it good-natured; never comment on the person's looks or identity. Reply with JSON only, shaped like {"matches": [{"key": "t1", "score": 87, "reason": "..."}]}, with one entry per tree.`;
+
+/** Scores one person against up to 20 trees per model call. */
+export async function rateCompatibility(person: Person, trees: TreeForMatching[], signal?: AbortSignal) {
+  const p = provider();
+  const results = new Map<string, { score: number; reason: string }>();
+
+  for (let i = 0; i < trees.length; i += 20) {
+    const batch = trees.slice(i, i + 20);
+    const keyed = new Map(batch.map((t, j) => [`t${j + 1}`, t]));
+    const treeText = [...keyed]
+      .map(
+        ([key, t]) =>
+          `<tree key="${key}">\n${t.name}, ${t.age}. ${t.species ?? "Unknown species"}, lives ${t.spot ?? "on campus"}.\n` +
+          (t.bio ? `Bio: ${t.bio}\n` : "") +
+          t.lines.map((l) => `${l.prompt ?? "Line"}: ${l.content}`).join("\n") +
+          `\n</tree>`,
+      )
+      .join("\n");
+    const personText =
+      `<person>\nName: ${person.firstName || "Anonymous"}\n` +
+      (person.about ? `About: ${person.about}\n` : "") +
+      (person.vibes.length ? `Vibes: ${person.vibes.join(", ")}\n` : "") +
+      (person.hangout ? `Hangs out at: ${person.hangout}\n` : "") +
+      `</person>`;
+
+    let content: string | null | undefined;
+    try {
+      const completion = await withFallback(p, p.textModel, (model) => p.client.chat.completions.create(
+        {
+          model,
+          temperature: 0.5,
+          max_completion_tokens: 4000,
+          response_format: { type: "json_schema", json_schema: { name: "compatibility", schema: z.toJSONSchema(Compat) } },
+          messages: [
+            { role: "system", content: COMPAT_SYSTEM },
+            { role: "user", content: `${personText}\n\n${treeText}\n\nRate this person with each tree.` },
+          ],
+          ...p.extra("describe"),
+        },
+        { signal },
+      ));
+      content = completion.choices[0]?.message?.content;
+    } catch (error) {
+      explain(error, p);
+    }
+
+    let parsed: z.infer<typeof Compat>;
+    try {
+      parsed = Compat.parse(JSON.parse((content ?? "").replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, "")));
+    } catch {
+      throw new UploadError("The matchmaker's notes came back garbled. Try again.");
+    }
+    for (const m of parsed.matches) {
+      const tree = keyed.get(m.key);
+      if (!tree || results.has(tree.id)) continue;
+      results.set(tree.id, {
+        score: Math.min(100, Math.max(0, Math.round(m.score) || 0)),
+        reason: clip(m.reason, 200) || "You'd have plenty to talk about.",
+      });
+    }
+  }
+  return results;
 }

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import CampusPlan from "@/components/CampusPlan";
 import CaptionVoter from "@/components/CaptionVoter";
 import TreePhoto from "@/components/TreePhoto";
+import { getMyDatingProfile, hasDatingProfile } from "@/lib/matchmaking";
 import { getUserAndProfile } from "@/lib/supabase/server";
 import { byEligibility, type RankedTree, type Vote } from "@/lib/types";
 
@@ -62,6 +63,13 @@ export default async function TreePage({ params }: PageProps<"/trees/[id]">) {
     : { data: [] as { caption_id: string; vote: number }[] };
   const voteFor = new Map((myVotes ?? []).map((v) => [v.caption_id, v.vote as Vote]));
 
+  // How you two fit, from the AI matchmaker (RLS: only your own row).
+  const dating = user ? await getMyDatingProfile() : null;
+  const { data: fit } =
+    dating && hasDatingProfile(dating.profile)
+      ? await supabase.from("tree_compat").select("score, reason").eq("image_id", tree.id).maybeSingle<{ score: number; reason: string }>()
+      : { data: null };
+
   const added = new Date(tree.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
   return (
@@ -92,6 +100,23 @@ export default async function TreePage({ params }: PageProps<"/trees/[id]">) {
               {me && <span className="chip">♥ {me.likes} likes</span>}
             </div>
             {tree.bio && <p className="display mt-4 text-2xl">“{tree.bio}”</p>}
+            {fit ? (
+              <div className="well mt-5 flex items-center gap-4 p-4">
+                <span className="display shrink-0 text-5xl tabular-nums text-like">{fit.score}%</span>
+                <p className="text-sm text-ink-2">
+                  <span className="block font-semibold text-ink">{fit.score >= 50 ? "Your type" : "Not quite your type"}</span>
+                  {fit.reason}
+                </p>
+              </div>
+            ) : (
+              dating?.ready &&
+              !hasDatingProfile(dating.profile) && (
+                <Link href="/profile/about" className="well mt-5 block p-4 text-sm text-ink-2 hover:text-ink">
+                  <span className="block font-semibold text-ink">Are you {tree.tree_name}&apos;s type?</span>
+                  Tell the trees about yourself and the AI matchmaker will tell you. →
+                </Link>
+              )
+            )}
           </div>
 
           <div className="mt-8">

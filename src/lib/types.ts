@@ -64,3 +64,17 @@ export const DAILY_UPLOAD_LIMIT = 10;
 export function byEligibility(a: RankedTree, b: RankedTree) {
   return b.score - a.score || b.likes - a.likes || a.created_at.localeCompare(b.created_at);
 }
+
+/** How well a user and a tree fit, from the AI matchmaker (see supabase/matchmaking.sql). */
+export type Compat = { score: number; reason: string };
+
+/** A tree only matches you back if you're at least this compatible. */
+export const MATCH_MIN = 50;
+
+/**
+ * It's a match when you like two of a tree's lines and the tree is into you
+ * too. Without a compatibility score (no "About you" yet), two likes is enough.
+ */
+export function isMatch(likes: number, compat: Compat | undefined) {
+  return likes >= 2 && (!compat || compat.score >= MATCH_MIN);
+}

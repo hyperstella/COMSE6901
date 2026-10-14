@@ -8,7 +8,7 @@ import Logo from "@/components/Logo";
 import SignInPrompt from "@/components/SignInPrompt";
 import TreePhoto from "@/components/TreePhoto";
 import { likeSound, matchSound, passSound } from "@/lib/sfx";
-import type { Card } from "@/lib/types";
+import { isMatch, type Card, type Compat } from "@/lib/types";
 import { castVote, fetchCards } from "@/lib/votes";
 
 const THRESHOLD = 100;
@@ -26,12 +26,21 @@ function lineSize(text: string) {
   return "text-[1.9rem] leading-[1.08]";
 }
 
-export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Card[]; signedIn: boolean }) {
+export default function SwipeDeck({
+  initialCards,
+  signedIn,
+  compat = {},
+}: {
+  initialCards: Card[];
+  signedIn: boolean;
+  /** Your compatibility with each tree, by tree id (empty without "About you"). */
+  compat?: Record<string, Compat>;
+}) {
   const [queue, setQueue] = useState(initialCards);
   const [index, setIndex] = useState(0);
   const [leaving, setLeaving] = useState<-1 | 0 | 1>(0);
   const [toast, setToast] = useState<{ text: string; tone: "like" | "pass" | "error" } | null>(null);
-  const [match, setMatch] = useState<Card | null>(null);
+  const [match, setMatch] = useState<{ card: Card; compat?: Compat } | null>(null);
   const [bursts, setBursts] = useState<Burst[]>([]);
   const [signInOpen, setSignInOpen] = useState(false);
   const [exhausted, setExhausted] = useState(false);
@@ -134,16 +143,21 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
       if (vote === 1) {
         const count = (likedByTree.current.get(card.image_id) ?? 0) + 1;
         likedByTree.current.set(card.image_id, count);
+        const fit = compat[card.image_id];
         if (count === 2 && !matched.current.has(card.image_id)) {
           matched.current.add(card.image_id);
-          setTimeout(() => {
-            setMatch(card);
-            matchSound();
-          }, 350);
+          if (isMatch(count, fit)) {
+            setTimeout(() => {
+              setMatch({ card, compat: fit });
+              matchSound();
+            }, 350);
+          } else if (fit) {
+            setToast({ text: `${card.tree_name} is flattered, but you're only ${fit.score}% their type`, tone: "pass" });
+          }
         }
       }
     },
-    [card, index, leaving, signedIn, advance],
+    [card, index, leaving, signedIn, advance, compat],
   );
 
   /** Brings back the last card and takes back its vote. */
@@ -258,7 +272,20 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
                   {card.species}
                   {card.spot && ` · ${card.spot}`}
                 </p>
+                {compat[card.image_id] && (
+                  <p className="mt-1.5 line-clamp-2 text-xs leading-snug text-white/85">{compat[card.image_id].reason}</p>
+                )}
               </div>
+              {compat[card.image_id] && (
+                <span
+                  className={`pointer-events-none absolute left-3 top-3 flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold shadow-md ${
+                    compat[card.image_id].score >= 50 ? "bg-like text-like-ink" : "bg-paper/90 text-ink-2"
+                  }`}
+                >
+                  <Heart className="h-3 w-3" />
+                  {compat[card.image_id].score}% your type
+                </span>
+              )}
               <span
                 ref={likeStamp}
                 className="pointer-events-none absolute left-4 top-5 -rotate-12 rounded-xl border-[3px] border-like bg-paper/85 px-3 py-1 text-3xl font-bold tracking-[0.2em] text-like opacity-0"
@@ -326,7 +353,7 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
         {toast && (
           <div
             role="status"
-            className={`pop-in absolute -top-4 left-1/2 z-30 -translate-x-1/2 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm shadow-lg ${
+            className={`pop-in absolute -top-4 left-1/2 z-30 -translate-x-1/2 w-max max-w-[calc(100%-1rem)] text-balance rounded-2xl text-center px-3.5 py-1.5 text-sm shadow-lg ${
               toast.tone === "like" ? "bg-like text-like-ink" : toast.tone === "error" ? "bg-ink text-paper" : "bg-paper text-ink"
             }`}
           >
@@ -388,13 +415,13 @@ export default function SwipeDeck({ initialCards, signedIn }: { initialCards: Ca
         Drag the card, or use ← pass · → like · ↓ skip · ⌫ undo
       </p>
 
-      {match && <MatchModal card={match} onClose={() => setMatch(null)} />}
+      {match && <MatchModal card={match.card} compat={match.compat} onClose={() => setMatch(null)} />}
       <SignInPrompt open={signInOpen} onClose={() => setSignInOpen(false)} next="/swipe" />
     </div>
   );
 }
 
-function MatchModal({ card, onClose }: { card: Card; onClose: () => void }) {
+function MatchModal({ card, compat, onClose }: { card: Card; compat?: Compat; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -423,10 +450,17 @@ function MatchModal({ card, onClose }: { card: Card; onClose: () => void }) {
           It&apos;s a match!
         </p>
         <Image src={card.image_url} alt={`Photo of ${card.tree_name}`} width={160} height={160} sizes="160px" className="mx-auto mt-5 h-40 w-40 rounded-full object-cover ring-4 ring-paper shadow-lg" />
-        <p className="mt-4 text-ink-2">
-          You liked two of {card.tree_name}&apos;s lines. Good news: {card.tree_name} is into you too.
-          (Trees are very easy to impress.)
-        </p>
+        {compat ? (
+          <>
+            <p className="display mt-4 text-3xl tabular-nums text-like">{compat.score}% compatible</p>
+            <p className="mt-1 text-ink-2">{compat.reason}</p>
+          </>
+        ) : (
+          <p className="mt-4 text-ink-2">
+            You liked two of {card.tree_name}&apos;s lines. Good news: {card.tree_name} is into you too.
+            (Trees are very easy to impress.)
+          </p>
+        )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Link href={`/trees/${card.image_id}`} className="btn btn-like">
             See {card.tree_name}

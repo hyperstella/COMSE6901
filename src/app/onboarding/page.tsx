@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import NameForm from "@/components/NameForm";
+import { getMyDatingProfile } from "@/lib/matchmaking";
 import { getUserAndProfile, isProfileComplete } from "@/lib/supabase/server";
 
 export const metadata = { title: "Welcome" };
@@ -8,6 +9,8 @@ export default async function OnboardingPage() {
   const { user, profile } = await getUserAndProfile();
   if (!user) redirect("/login");
   if (isProfileComplete(profile)) redirect("/dashboard");
+  // New users go on to tell the trees about themselves (once that's set up).
+  const { ready } = await getMyDatingProfile();
 
   return (
     <main className="mx-auto w-full max-w-xl px-4 py-16">
@@ -21,7 +24,7 @@ export default async function OnboardingPage() {
         <NameForm
           firstName={profile?.first_name ?? ""}
           lastName={profile?.last_name ?? ""}
-          redirectTo="/dashboard"
+          redirectTo={ready ? "/profile/about?welcome=1" : "/dashboard"}
           submitLabel="Continue"
         />
       </div>

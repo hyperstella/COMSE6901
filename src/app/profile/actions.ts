@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { computeCompat, VIBES } from "@/lib/matchmaking";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 export type FormState = { error?: string; success?: string };
@@ -47,8 +48,9 @@ export async function updateName(
 
   revalidatePath("/", "layout");
 
-  // Onboarding sends the user on to the gated page once they're done.
-  if (formData.get("redirect_to") === "/dashboard") redirect("/dashboard");
+  // Onboarding sends the user on to the next step once they're done.
+  const next = formData.get("redirect_to");
+  if (next === "/dashboard" || next === "/profile/about?welcome=1") redirect(next);
   return { success: "Name saved." };
 }
 
@@ -106,4 +108,65 @@ export async function uploadAvatar(
 
   revalidatePath("/", "layout");
   return { success: "Photo updated." };
+}
+
+export type TopPick = { id: string; name: string; imageUrl: string; score: number; reason: string };
+export type AboutState = FormState & { picks?: TopPick[] };
+
+/**
+ * Saves what the user tells the trees about themselves, then has the AI
+ * matchmaker rate them against every tree. The profile is saved even if the
+ * matchmaker is down; missing scores are filled in on the next swipe.
+ */
+export async function saveAbout(_prev: AboutState, formData: FormData): Promise<AboutState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login?next=/profile/about");
+
+  const about = String(formData.get("about") ?? "").trim().slice(0, 280);
+  const hangout = String(formData.get("hangout") ?? "").trim().slice(0, 60);
+  const vibes = formData
+    .getAll("vibes")
+    .map(String)
+    .filter((v): v is (typeof VIBES)[number] => (VIBES as readonly string[]).includes(v))
+    .slice(0, 3);
+  if (!about && vibes.length === 0) {
+    return { error: "Tell the trees something: a sentence about you, or a vibe or two." };
+  }
+
+  // Runs as the user: RLS and column grants limit this to their own row.
+  const { data: updated, error } = await supabase
+    .from("profiles")
+    .update({ about, vibes, hangout, updated_at: new Date().toISOString() })
+    .eq("id", user.id)
+    .select("first_name");
+  if (error) return { error: error.message };
+  if (!updated?.length) return { error: "Profile not found. Try signing out and back in." };
+  revalidatePath("/", "layout");
+
+  // Old scores were for the old you.
+  const admin = createAdminClient();
+  await admin.from("tree_compat").delete().eq("user_id", user.id);
+
+  let scores;
+  try {
+    scores = await computeCompat(user.id, updated[0].first_name ?? "", { about, vibes, hangout });
+  } catch (e) {
+    console.error("compatibility failed", e);
+    return { success: "Saved! The matchmaker is swamped right now, so your scores will show up next time you swipe." };
+  }
+
+  const best = [...scores].sort((a, b) => b[1].score - a[1].score).slice(0, 3);
+  const { data: trees } = await admin
+    .from("images")
+    .select("id, tree_name, image_url")
+    .in("id", best.map(([id]) => id));
+  const byId = new Map((trees ?? []).map((t) => [t.id as string, t]));
+  const picks = best.flatMap(([id, c]) => {
+    const t = byId.get(id);
+    return t ? [{ id, name: t.tree_name as string, imageUrl: t.image_url as string, ...c }] : [];
+  });
+  return { success: "Saved! Here's who's into you.", picks };
 }

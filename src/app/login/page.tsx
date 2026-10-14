@@ -1,5 +1,7 @@
-import GoogleSignInButton from "@/components/GoogleSignInButton";
+import { headers } from "next/headers";
+import GoogleSignInButton, { GoogleRelayButton } from "@/components/GoogleSignInButton";
 import Logo from "@/components/Logo";
+import { needsRelay } from "@/lib/auth-relay";
 import { safeNextPath } from "@/lib/next-path";
 
 export const metadata = { title: "Sign in" };
@@ -8,6 +10,9 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { error, next } = await searchParams;
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   const nextPath = typeof next === "string" ? safeNextPath(next) : null;
+  // Deployment URLs aren't registered with Google; they sign in via production.
+  const host = (await headers()).get("host");
+  const relay = Boolean(host) && needsRelay(`https://${host}`);
 
   return (
     <main className="flex flex-1 items-center justify-center px-4 py-16">
@@ -23,7 +28,9 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         </p>
 
         <div className="mt-8">
-          {clientId ? (
+          {clientId && relay ? (
+            <GoogleRelayButton next={nextPath} />
+          ) : clientId ? (
             <GoogleSignInButton clientId={clientId} next={nextPath} />
           ) : (
             <p className="text-sm text-like">NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set.</p>

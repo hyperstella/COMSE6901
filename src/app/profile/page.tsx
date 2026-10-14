@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import AvatarForm from "@/components/AvatarForm";
@@ -24,6 +25,15 @@ export default async function ProfilePage() {
             <AvatarForm />
           </div>
         </div>
+      </section>
+
+      <section className="mt-10">
+        <div className="rule mb-8" />
+        <h2 className="display italic text-3xl">About you</h2>
+        <p className="mt-2 text-ink-2">What the AI matchmaker reads to pair you with trees.</p>
+        <Link href="/profile/about" className="btn btn-paper mt-4">
+          Edit what you told the trees
+        </Link>
       </section>
 
       <section className="mt-10">

@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { after } from "next/server";
 import SwipeDeck from "@/components/SwipeDeck";
+import { computeCompat, getMyDatingProfile, hasDatingProfile, loadCompat, rankByCompat } from "@/lib/matchmaking";
 import { getUserAndProfile } from "@/lib/supabase/server";
-import type { Card } from "@/lib/types";
+import type { Card, Compat } from "@/lib/types";
 
 export const metadata = { title: "Swipe" };
 
@@ -10,7 +12,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** `?tree=<id>` puts that tree's lines first (used right after adding a tree). */
 export default async function SwipePage({ searchParams }: PageProps<"/swipe">) {
   const { tree } = await searchParams;
-  const { supabase, user } = await getUserAndProfile();
+  const { supabase, user, profile } = await getUserAndProfile();
 
   const { data } = await supabase.rpc("swipe_queue", { max_count: 30 });
   let cards = (data ?? []) as Card[];
@@ -67,6 +69,16 @@ export default async function SwipePage({ searchParams }: PageProps<"/swipe">) {
     cards = [...first, ...cards.filter((c) => !firstIds.has(c.caption_id))];
   }
 
+  // Your best fits first, with some shuffle so it isn't the same order every time.
+  const dating = user ? await getMyDatingProfile() : null;
+  const about = dating && hasDatingProfile(dating.profile) ? dating.profile : null;
+  const compat = about ? await loadCompat(supabase) : new Map<string, Compat>();
+  if (compat.size) cards = rankByCompat(cards, compat, typeof tree === "string" ? tree : null);
+  // Trees added since this user's scores were made get scored after the response.
+  if (user && about && cards.some((c) => !compat.has(c.image_id))) {
+    after(() => computeCompat(user.id, profile?.first_name ?? "", about, { missingOnly: true }).catch(() => {}));
+  }
+
   // One screen tall, so the card shrinks to fit and the buttons are never below the fold.
   return (
     <main className="mx-auto flex h-[calc(100svh-3.5rem-var(--tabbar))] min-h-[540px] w-full max-w-6xl flex-col px-4 pb-4 pt-2 sm:px-6 sm:pt-4">
@@ -74,6 +86,15 @@ export default async function SwipePage({ searchParams }: PageProps<"/swipe">) {
         <h1 className="display sr-only text-5xl italic sm:not-sr-only">Swipe</h1>
         <p className="text-sm text-ink-2 sm:mt-1 sm:text-base">
           Right if the line makes you laugh. Left if it doesn&apos;t.
+          {user && dating?.ready && !about && (
+            <>
+              {" "}
+              <Link href="/profile/about" className="font-semibold text-accent underline decoration-accent/30 underline-offset-4 hover:decoration-accent">
+                Tell the trees about you
+              </Link>{" "}
+              for better matches.
+            </>
+          )}
           {!user && (
             <>
               {" "}
@@ -85,7 +106,12 @@ export default async function SwipePage({ searchParams }: PageProps<"/swipe">) {
           )}
         </p>
       </div>
-      <SwipeDeck key={typeof tree === "string" ? tree : "all"} initialCards={cards} signedIn={Boolean(user)} />
+      <SwipeDeck
+        key={typeof tree === "string" ? tree : "all"}
+        initialCards={cards}
+        signedIn={Boolean(user)}
+        compat={Object.fromEntries(compat)}
+      />
     </main>
   );
 }

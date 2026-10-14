@@ -23,7 +23,12 @@ three.js.
   browser from a small cached copy of the photo (downsample, then a 14-color palette), so it
   costs no storage, model calls or server time. The same colors build each tree's voxel model
   on the campus book, shaped by its species.
-- **Your garden** (`/dashboard`): your matches and the trees you added. The original restaurant
+- **About you** (`/profile/about`): a sentence about yourself, up to three vibes and where you
+  hang out. An AI matchmaker reads it next to every tree's profile and scores how compatible
+  you are (0-100, with a one-line reason). Your best fits come first when you swipe, and a
+  tree only matches you back if you're at least 50% its type. Signed-in users who haven't
+  filled it in get a nudge; new users land here right after picking a name.
+- **Your garden** (`/dashboard`): your top picks, your matches and the trees you added. The original restaurant
   list lives at `/restaurants`.
 
 Signing in uses Google (see below). Anyone can browse; only signed-in users can vote or upload.
@@ -38,7 +43,8 @@ strictest rules the app still works under:
 | `images` (trees) | read | read | server only (service role, after the prompt chain succeeds) |
 | `captions` (profile lines) | read | read | server only; tallies kept by a trigger |
 | `caption_votes` | none | read/insert/update/delete **own rows only** (`user_id = auth.uid()`) | the voter |
-| `profiles` | none | read and rename **own row only** | sign-up trigger; avatar URL by server |
+| `profiles` | none | read and edit name and "About you" on **own row only** | sign-up trigger; avatar URL by server |
+| `tree_compat` (compatibility) | none | read **own rows only** | server only, from the AI matchmaker |
 | `restaurants` | read | read | nobody (seed data) |
 
 Votes are written with the user's own session, so RLS (not app code) is what stops someone
@@ -59,7 +65,9 @@ runs against:
 | `ollama` | local development | `OLLAMA_VISION_MODEL` (default `qwen2.5vl:7b`), `OLLAMA_TEXT_MODEL` (default `qwen2.5:7b`), `OLLAMA_BASE_URL` |
 | `gemini` | production on Vercel | `GEMINI_API_KEY` (free key from [Google AI Studio](https://aistudio.google.com/apikey)), `GEMINI_MODEL` (default `gemini-3.8-flash`) |
 
-If `LLM_PROVIDER` is unset and `GEMINI_API_KEY` is set, Gemini is used. Each user can add
+If `LLM_PROVIDER` is unset and `GEMINI_API_KEY` is set, Gemini is used. When the Gemini model
+is overloaded (503) or rate limited, each call is retried once on `GEMINI_FALLBACK_MODEL`
+(default `gemini-3.5-flash-lite`). Each user can add
 10 trees per 24 hours.
 
 ## How sign-in works
@@ -69,13 +77,19 @@ If `LLM_PROVIDER` is unset and `GEMINI_API_KEY` is set, Gemini is used. Each use
    `supabase.auth.signInWithIdToken`, which only needs the Google **Client ID**, not a Client Secret.
 3. The session is stored in cookies through `@supabase/ssr`. `src/proxy.ts` refreshes it on each
    request and redirects signed-out visitors away from protected routes.
-4. If `first_name` or `last_name` is empty, the user is sent to `/onboarding`. Otherwise they go
+4. On a commit-specific Vercel URL (`comse-6901-<hash>-hyperstella.vercel.app`), which Google
+   doesn't know about, the button goes to `/auth/google` instead. Google sends the ID token to
+   the production `/auth/callback`, which posts it straight back to that deployment's
+   `/auth/callback`; the deployment checks a one-time state cookie and signs in there. Only
+   this project's own deployment URLs can receive a relayed token (`src/lib/auth-relay.ts`).
+5. If `first_name` or `last_name` is empty, the user is sent to `/onboarding`. Otherwise they go
    back to the page they came from.
 
 ## Setup
 
-1. **Database:** run `supabase/profiles.sql`, then `supabase/captions.sql`, in the Supabase SQL
-   editor.
+1. **Database:** run `supabase/profiles.sql`, then `supabase/captions.sql`, then
+   `supabase/matchmaking.sql`, in the Supabase SQL editor. (Until `matchmaking.sql` runs, the
+   app hides "About you" and compatibility.)
 2. **Google OAuth client** (Google Cloud Console → APIs & Services → Credentials → OAuth client ID →
    Web application):
    - Authorized JavaScript origins: `http://localhost`, `http://localhost:3000`, and your Vercel URL(s)
