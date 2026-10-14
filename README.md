@@ -63,9 +63,10 @@ runs against:
 | `LLM_PROVIDER` | Used for | Settings |
 | --- | --- | --- |
 | `ollama` | local development | `OLLAMA_VISION_MODEL` (default `qwen2.5vl:7b`), `OLLAMA_TEXT_MODEL` (default `qwen2.5:7b`), `OLLAMA_BASE_URL` |
-| `gemini` | production on Vercel | `GEMINI_API_KEY` (free key from [Google AI Studio](https://aistudio.google.com/apikey)), `GEMINI_MODEL` (default `gemini-3.8-flash`) |
+| `gateway` | production on Vercel (the default there) | Vercel AI Gateway, authenticated with the deployment's OIDC token, so no API key. `AI_GATEWAY_MODEL` (default `google/gemini-3.8-flash`), `AI_GATEWAY_FALLBACK_MODEL` (default `google/gemini-3.5-flash-lite`) |
+| `gemini` | optional alternative | `GEMINI_API_KEY` (free key from [Google AI Studio](https://aistudio.google.com/apikey)), `GEMINI_MODEL` (default `gemini-3.8-flash`) |
 
-If `LLM_PROVIDER` is unset and `GEMINI_API_KEY` is set, Gemini is used. When the Gemini model
+If `LLM_PROVIDER` is unset, Gemini is used when `GEMINI_API_KEY` is set, and otherwise AI Gateway when running on Vercel. When the Gemini model
 is overloaded (503) or rate limited, each call is retried once on `GEMINI_FALLBACK_MODEL`
 (default `gemini-3.5-flash-lite`). Each user can add
 10 trees per 24 hours.
@@ -104,8 +105,8 @@ is overloaded (503) or rate limited, each call is retried once on `GEMINI_FALLBA
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API |
    | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API (server-only; used for uploads) |
    | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google Cloud Console |
-   | `LLM_PROVIDER` | `ollama` locally, `gemini` on Vercel |
-   | `GEMINI_API_KEY` | Google AI Studio (production) |
+   | `LLM_PROVIDER` | `ollama` locally; leave unset on Vercel (uses AI Gateway) |
+   | `GEMINI_API_KEY` | optional: Google AI Studio, to use Gemini directly instead of AI Gateway |
 
 5. For local captions, run Ollama and pull the models:
 

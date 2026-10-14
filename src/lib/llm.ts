@@ -1,3 +1,4 @@
+import { getVercelOidcToken } from "@vercel/oidc";
 import OpenAI from "openai";
 import { z } from "zod";
 import type { TreeProfile } from "./types";
@@ -9,12 +10,13 @@ import type { TreeProfile } from "./types";
  *      dating profile. Each profile answer is a caption people vote on.
  *
  * Both steps use the OpenAI-compatible Chat Completions API, which lets the same
- * code talk to a local Ollama server in development and to Google's Gemini API
- * in production. Pick one with LLM_PROVIDER (see README).
+ * code talk to a local Ollama server in development and, in production, to
+ * Vercel AI Gateway (no API key: it authenticates with the deployment's OIDC
+ * token) or Google's Gemini API. Pick one with LLM_PROVIDER (see README).
  */
 
 type Provider = {
-  name: "ollama" | "gemini";
+  name: "ollama" | "gemini" | "gateway";
   client: OpenAI;
   visionModel: string;
   textModel: string;
@@ -27,7 +29,26 @@ type Provider = {
 export class UploadError extends Error {}
 
 function getProvider(): Provider | null {
-  const name = (process.env.LLM_PROVIDER ?? (process.env.GEMINI_API_KEY ? "gemini" : "")).toLowerCase();
+  const name = (
+    process.env.LLM_PROVIDER ?? (process.env.GEMINI_API_KEY ? "gemini" : process.env.VERCEL ? "gateway" : "")
+  ).toLowerCase();
+
+  if (name === "gateway") {
+    const model = process.env.AI_GATEWAY_MODEL ?? "google/gemini-3.8-flash";
+    return {
+      name,
+      client: new OpenAI({
+        // An AI Gateway key if one is set; otherwise the deployment's OIDC
+        // token, fetched per request since it expires.
+        apiKey: process.env.AI_GATEWAY_API_KEY ?? (() => getVercelOidcToken()),
+        baseURL: "https://ai-gateway.vercel.sh/v1",
+      }),
+      visionModel: model,
+      textModel: model,
+      fallbackModel: process.env.AI_GATEWAY_FALLBACK_MODEL ?? "google/gemini-3.5-flash-lite",
+      extra: (step) => ({ reasoning_effort: step === "describe" ? "low" : "medium" }),
+    };
+  }
 
   if (name === "gemini") {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -93,6 +114,11 @@ function explain(error: unknown, p: Provider): never {
         ? "Can't reach Ollama. Is `ollama serve` running?"
         : "Couldn't reach the model provider. Try again in a moment.",
     );
+  }
+  if (p.name === "gateway" && error instanceof OpenAI.APIError && [401, 402, 403].includes(error.status ?? 0)) {
+    // Auth (OIDC) or credits: nothing the user can fix, so log the details for us.
+    console.error("AI Gateway refused the request", error.status, error.message);
+    throw new UploadError("Tree profiles are taking a break right now. Try again later.");
   }
   if (error instanceof OpenAI.RateLimitError || (error instanceof OpenAI.APIError && error.status === 503)) {
     throw new UploadError("The AI is getting a lot of requests. Try again in a minute.");
