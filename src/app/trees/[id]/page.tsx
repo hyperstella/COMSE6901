@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import CampusPlan from "@/components/CampusPlan";
 import CaptionVoter from "@/components/CaptionVoter";
+import ShareButton from "@/components/ShareButton";
 import TreePhoto from "@/components/TreePhoto";
 import { getMyDatingProfile, hasDatingProfile } from "@/lib/matchmaking";
 import { getUserAndProfile } from "@/lib/supabase/server";
@@ -31,8 +32,11 @@ export async function generateMetadata({ params }: PageProps<"/trees/[id]">) {
   const { id } = await params;
   if (!UUID.test(id)) return { title: "Not found" };
   const { supabase } = await getUserAndProfile();
-  const { data } = await supabase.from("images").select("tree_name").eq("id", id).maybeSingle();
-  return { title: data?.tree_name ?? "Tree" };
+  const { data } = await supabase.from("images").select("tree_name, tree_age, bio").eq("id", id).maybeSingle();
+  if (!data) return { title: "Tree" };
+  const title = `${data.tree_name}, ${data.tree_age}`;
+  const description = data.bio ? `“${data.bio}” Swipe on ${data.tree_name}'s dating profile on Treendr.` : `Meet ${data.tree_name} on Treendr.`;
+  return { title: data.tree_name, description, openGraph: { title: `${title} · Treendr`, description }, twitter: { card: "summary_large_image" } };
 }
 
 export default async function TreePage({ params }: PageProps<"/trees/[id]">) {
@@ -56,6 +60,7 @@ export default async function TreePage({ params }: PageProps<"/trees/[id]">) {
   const rank = ranked.findIndex((t) => t.id === tree.id) + 1;
   const me = ranked.find((t) => t.id === tree.id);
   const lines = [...tree.captions].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const best = [...lines].sort((a, b) => b.upvotes - b.downvotes - (a.upvotes - a.downvotes))[0];
 
   // RLS returns only this user's own votes.
   const { data: myVotes } = user
@@ -156,9 +161,16 @@ export default async function TreePage({ params }: PageProps<"/trees/[id]">) {
             ))}
           </ol>
 
-          <Link href={`/swipe?tree=${tree.id}`} className="btn btn-like mt-6">
-            Swipe on {tree.tree_name}
-          </Link>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Link href={`/swipe?tree=${tree.id}`} className="btn btn-like">
+              Swipe on {tree.tree_name}
+            </Link>
+            <ShareButton
+              path={`/trees/${tree.id}`}
+              title={`${tree.tree_name}, ${tree.tree_age} on Treendr`}
+              text={best ? `${tree.tree_name} on Treendr: “${best.content}”` : `Meet ${tree.tree_name} on Treendr`}
+            />
+          </div>
 
           <section className="mt-10">
             <h2 className="display text-3xl italic">Field notes</h2>

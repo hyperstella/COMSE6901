@@ -38,7 +38,7 @@ export default async function DashboardPage() {
   const likes = (votes ?? []).filter((v) => v.vote === 1);
   const passes = (votes ?? []).length - likes.length;
 
-  // A match: you liked two of a tree's lines and it's into you too (see isMatch).
+  // A match: you liked a tree and it's into you too (see isMatch).
   const liked = new Map<string, { tree: MyTree; count: number }>();
   for (const v of likes) {
     const tree = v.captions.images;
@@ -46,7 +46,7 @@ export default async function DashboardPage() {
     entry.count++;
     liked.set(tree.id, entry);
   }
-  const matches = [...liked.values()].filter((m) => isMatch(m.count, compat.get(m.tree.id))).map((m) => m.tree);
+  const matches = [...liked.values()].filter((m) => isMatch(m.count > 0, compat.get(m.tree.id))).map((m) => m.tree);
 
   // Your most compatible trees, from the AI matchmaker.
   const { data: allTrees } = compat.size
@@ -120,7 +120,7 @@ export default async function DashboardPage() {
       )}
       <TreeRow
         title="Your matches"
-        empty={about ? "No matches yet. Like two lines from a tree that's into you (50%+) to match." : "No matches yet. Like two lines from the same tree to match."}
+        empty={about ? "No matches yet. Like a tree that's into you (50%+) to match." : "Tell the trees about you, and the ones you like can like you back."}
         trees={matches}
         badge={scoreOf}
         cta={{ href: "/swipe", label: "Start swiping" }}

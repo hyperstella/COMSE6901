@@ -1,6 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { buildDeck } from "@/lib/deck";
+import { loadCompat, rankByCompat } from "@/lib/matchmaking";
 import type { Card, Tally, Vote } from "@/lib/types";
 
 export type VoteResult =
@@ -63,10 +65,14 @@ export async function castVote(captionId: string, vote: Vote): Promise<VoteResul
   return { ok: true, vote, tally };
 }
 
-/** More profile lines to swipe on, skipping ones the client already has. */
+/** More trees to swipe on, skipping ones the client already has (by tree id). */
 export async function fetchCards(exclude: string[] = []): Promise<Card[]> {
   const supabase = await createClient();
-  const { data } = await supabase.rpc("swipe_queue", { max_count: 30 });
-  const seen = new Set(exclude);
-  return ((data ?? []) as Card[]).filter((card) => !seen.has(card.caption_id));
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const cards = await buildDeck(supabase, user?.id ?? null, { exclude: exclude.filter((id) => UUID.test(id)).slice(0, 500) });
+  if (!user) return cards;
+  const compat = await loadCompat(supabase);
+  return compat.size ? rankByCompat(cards, compat, null) : cards;
 }

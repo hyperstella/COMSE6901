@@ -9,7 +9,7 @@ three.js.
   the sliders scrub through the year and the day. The layout comes from `src/lib/campus.ts`,
   which the 2D plan and the spot descriptions also read.
 - **Swipe** (`/swipe`): each card is one line from a tree's dating profile. Swipe right (or →)
-  to like it and left (←) to pass. Like two lines from the same tree and it's a match.
+  to like it and left (←) to pass. Each tree shows up once, with just its punch line (its best-received line), and never again after you've liked or passed it. Like a tree that's at least 50% into you (see About you) and it's a match.
 - **Add a tree** (`/upload`): signed-in users upload a photo, pin it on the campus plan, and
   watch a two-step prompt chain run live:
   1. a vision model writes field notes on the photo (streamed);

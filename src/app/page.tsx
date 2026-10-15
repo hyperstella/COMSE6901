@@ -61,7 +61,7 @@ export default async function HomePage() {
               "AI writes its profile",
               "A vision model takes field notes on the tree. A second model reads only those notes and writes its dating profile.",
             ],
-            ["Swipe on its lines", "Every like and pass is saved. Like two lines from one tree and it's a match. The most liked trees rise to the top."],
+            ["Swipe on its best line", "Each tree shows you its punch line. Like it, and if the AI matchmaker says you're its type, it's a match. The most liked trees rise to the top."],
           ].map(([title, body], i) => (
             <li key={title} className="card page-in p-6" style={{ "--delay": `${i * 0.08}s` } as React.CSSProperties}>
               <span className="display text-6xl italic text-brick">{i + 1}</span>

@@ -72,9 +72,9 @@ export type Compat = { score: number; reason: string };
 export const MATCH_MIN = 50;
 
 /**
- * It's a match when you like two of a tree's lines and the tree is into you
- * too. Without a compatibility score (no "About you" yet), two likes is enough.
+ * It's a match when you like a tree and it's into you too: the AI matchmaker
+ * says you're at least MATCH_MIN% its type. No "About you", no score, no match.
  */
-export function isMatch(likes: number, compat: Compat | undefined) {
-  return likes >= 2 && (!compat || compat.score >= MATCH_MIN);
+export function isMatch(liked: boolean, compat: Compat | undefined) {
+  return liked && Boolean(compat) && compat!.score >= MATCH_MIN;
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Heart from "@/components/Heart";
 import Logo from "@/components/Logo";
+import ShareButton from "@/components/ShareButton";
 import SignInPrompt from "@/components/SignInPrompt";
 import TreePhoto from "@/components/TreePhoto";
 import { likeSound, matchSound, passSound } from "@/lib/sfx";
@@ -30,17 +31,20 @@ export default function SwipeDeck({
   initialCards,
   signedIn,
   compat = {},
+  hasAbout = false,
 }: {
   initialCards: Card[];
   signedIn: boolean;
   /** Your compatibility with each tree, by tree id (empty without "About you"). */
   compat?: Record<string, Compat>;
+  /** Whether you've told the trees about yourself, so they can like you back. */
+  hasAbout?: boolean;
 }) {
   const [queue, setQueue] = useState(initialCards);
   const [index, setIndex] = useState(0);
   const [leaving, setLeaving] = useState<-1 | 0 | 1>(0);
   const [toast, setToast] = useState<{ text: string; tone: "like" | "pass" | "error" } | null>(null);
-  const [match, setMatch] = useState<{ card: Card; compat?: Compat } | null>(null);
+  const [match, setMatch] = useState<{ card: Card; compat: Compat } | null>(null);
   const [bursts, setBursts] = useState<Burst[]>([]);
   const [signInOpen, setSignInOpen] = useState(false);
   const [exhausted, setExhausted] = useState(false);
@@ -51,7 +55,6 @@ export default function SwipeDeck({
   const likeStamp = useRef<HTMLSpanElement>(null);
   const nopeStamp = useRef<HTMLSpanElement>(null);
   const drag = useRef<{ id: number; x0: number; y0: number; dx: number; dy: number } | null>(null);
-  const likedByTree = useRef(new Map<string, number>());
   const matched = useRef(new Set<string>());
   const loadingMore = useRef(false);
 
@@ -61,7 +64,7 @@ export default function SwipeDeck({
   useEffect(() => {
     if (exhausted || loadingMore.current || queue.length - index > 5) return;
     loadingMore.current = true;
-    fetchCards(queue.map((c) => c.caption_id))
+    fetchCards(queue.map((c) => c.image_id))
       .then((more) => {
         if (more.length === 0) setExhausted(true);
         else setQueue((q) => [...q, ...more]);
@@ -132,32 +135,26 @@ export default function SwipeDeck({
       }
       const total = res.tally.upvotes + res.tally.downvotes;
       const pct = total ? Math.round((res.tally.upvotes / total) * 100) : 0;
-      setToast({
-        text:
-          total <= 1
-            ? `First ${vote === 1 ? "like" : "pass"} on this line!`
-            : `${pct}% liked this line · ${total} votes`,
-        tone: vote === 1 ? "like" : "pass",
-      });
+      const crowd = total <= 1 ? `First ${vote === 1 ? "like" : "pass"} on this line!` : `${pct}% liked this line · ${total} votes`;
+      if (vote === -1) return setToast({ text: crowd, tone: "pass" });
 
-      if (vote === 1) {
-        const count = (likedByTree.current.get(card.image_id) ?? 0) + 1;
-        likedByTree.current.set(card.image_id, count);
-        const fit = compat[card.image_id];
-        if (count === 2 && !matched.current.has(card.image_id)) {
-          matched.current.add(card.image_id);
-          if (isMatch(count, fit)) {
-            setTimeout(() => {
-              setMatch({ card, compat: fit });
-              matchSound();
-            }, 350);
-          } else if (fit) {
-            setToast({ text: `${card.tree_name} is flattered, but you're only ${fit.score}% their type`, tone: "pass" });
-          }
-        }
+      // A like: does the tree like you back?
+      const fit = compat[card.image_id];
+      if (isMatch(true, fit) && !matched.current.has(card.image_id)) {
+        matched.current.add(card.image_id);
+        setTimeout(() => {
+          setMatch({ card, compat: fit });
+          matchSound();
+        }, 350);
+      } else if (fit && !isMatch(true, fit)) {
+        setToast({ text: `${card.tree_name} is flattered, but you're only ${fit.score}% their type`, tone: "pass" });
+      } else if (!hasAbout) {
+        setToast({ text: `Liked! Tell the trees about you to see if ${card.tree_name} likes you back`, tone: "like" });
+      } else {
+        setToast({ text: crowd, tone: "like" });
       }
     },
-    [card, index, leaving, signedIn, advance, compat],
+    [card, index, leaving, signedIn, advance, compat, hasAbout],
   );
 
   /** Brings back the last card and takes back its vote. */
@@ -168,10 +165,6 @@ export default function SwipeDeck({
     setIndex(last.at);
     if (last.vote === 0) return;
 
-    if (last.vote === 1) {
-      const count = likedByTree.current.get(last.card.image_id) ?? 0;
-      likedByTree.current.set(last.card.image_id, Math.max(0, count - 1));
-    }
     setToast({ text: `Took back your ${last.vote === 1 ? "like" : "pass"}`, tone: "pass" });
     // Let the original vote land first, so the two writes can't arrive out of order.
     await last.saved.catch(() => {});
@@ -314,11 +307,11 @@ export default function SwipeDeck({
         ) : (
           <div className="card absolute inset-0 flex flex-col items-center justify-center p-8 text-center">
             <Logo className="h-16 w-16" />
-            <p className="display mt-4 text-4xl italic">{queue.length ? "You've seen every line" : "No trees yet"}</p>
+            <p className="display mt-4 text-4xl italic">{queue.length ? "You've met every tree" : "No trees yet"}</p>
             <p className="mt-3 text-ink-2">
               {queue.length
                 ? signedIn
-                  ? "You've swiped on every tree on campus. Add a new one, or see who's winning."
+                  ? "You've swiped on every tree on campus. New ones show up here as people add them, or add one yourself."
                   : "That's every tree for now. Sign in to swipe for real, or go around again."
                 : "Be the first to put a tree on Treendr."}
             </p>
@@ -421,7 +414,7 @@ export default function SwipeDeck({
   );
 }
 
-function MatchModal({ card, compat, onClose }: { card: Card; compat?: Compat; onClose: () => void }) {
+function MatchModal({ card, compat, onClose }: { card: Card; compat: Compat; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -450,21 +443,19 @@ function MatchModal({ card, compat, onClose }: { card: Card; compat?: Compat; on
           It&apos;s a match!
         </p>
         <Image src={card.image_url} alt={`Photo of ${card.tree_name}`} width={160} height={160} sizes="160px" className="mx-auto mt-5 h-40 w-40 rounded-full object-cover ring-4 ring-paper shadow-lg" />
-        {compat ? (
-          <>
-            <p className="display mt-4 text-3xl tabular-nums text-like">{compat.score}% compatible</p>
-            <p className="mt-1 text-ink-2">{compat.reason}</p>
-          </>
-        ) : (
-          <p className="mt-4 text-ink-2">
-            You liked two of {card.tree_name}&apos;s lines. Good news: {card.tree_name} is into you too.
-            (Trees are very easy to impress.)
-          </p>
-        )}
+        <p className="display mt-4 text-3xl tabular-nums text-like">{compat.score}% compatible</p>
+        <p className="mt-1 text-ink-2">
+          You liked {card.tree_name}, and {card.tree_name} likes you back. {compat.reason}
+        </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Link href={`/trees/${card.image_id}`} className="btn btn-like">
             See {card.tree_name}
           </Link>
+          <ShareButton
+            path={`/trees/${card.image_id}`}
+            title={`I matched with ${card.tree_name} on Treendr`}
+            text={`I matched with ${card.tree_name} on Treendr (${compat.score}% compatible): “${card.content}”`}
+          />
           <button onClick={onClose} className="btn btn-paper">
             Keep swiping
           </button>
