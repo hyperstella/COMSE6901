@@ -1,9 +1,10 @@
 import { createAdminClient } from "./supabase/server";
 
 /**
- * Who may create an account (allowed_signup_domains and whitelisted_emails,
- * managed in the admin panel). With no rows in either table, or before the
- * tables exist, anyone can sign up. Existing accounts always get in.
+ * Who may sign in (allowed_signup_domains and whitelisted_emails, managed in
+ * the admin panel). With no rows in either table, or before the tables
+ * exist, anyone can sign in. Otherwise every sign-in, new account or not,
+ * needs an email on an allowed domain or on the whitelist.
  */
 export async function signupAllowed(email: string | null): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!email) return { ok: true };
@@ -14,13 +15,6 @@ export async function signupAllowed(email: string | null): Promise<{ ok: true } 
     return { ok: true };
   }
   const lower = email.trim().toLowerCase();
-
-  const { data: existing, error: profileError } = await admin
-    .from("profiles")
-    .select("id")
-    .in("email", [email, lower])
-    .limit(1);
-  if (!profileError && existing?.length) return { ok: true };
 
   const [{ data: domainRows, error: domainError }, { data: emailRows, error: emailError }] = await Promise.all([
     admin.from("allowed_signup_domains").select("domain"),
@@ -37,8 +31,8 @@ export async function signupAllowed(email: string | null): Promise<{ ok: true } 
   return {
     ok: false,
     reason: domains.length
-      ? `Sign-ups are limited to ${domains.map((d) => `@${d}`).join(", ")} addresses.`
-      : "Sign-ups are invite-only right now.",
+      ? `Sign-in is limited to ${domains.map((d) => `@${d}`).join(", ")} addresses.`
+      : "Sign-in is invite-only right now.",
   };
 }
 

@@ -69,8 +69,8 @@ async function signIn(
   response.cookies.delete(NEXT_COOKIE);
   response.cookies.delete(RELAY_COOKIE);
 
-  // New accounts only for allowed domains or whitelisted addresses (set in
-  // the admin panel); existing accounts always get in.
+  // Only allowed domains or whitelisted addresses may sign in (set in the
+  // admin panel); with both lists empty, anyone may.
   const allowed = await signupAllowed(tokenEmail(token));
   if (!allowed.ok) return fail(allowed.reason);
 

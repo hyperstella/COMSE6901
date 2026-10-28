@@ -72,7 +72,7 @@ is overloaded (503) or rate limited, each call is retried once on `GEMINI_FALLBA
 (default `gemini-3.5-flash-lite`). Each user can add
 10 trees per 24 hours.
 
-## Prompt chains, observability and sign-up rules
+## Prompt chains, observability and sign-in rules
 
 `supabase/observability.sql` adds the tables behind the
 [admin panel](https://github.com/hyperstella/COMSE6901-admin-panel):
@@ -94,13 +94,13 @@ is overloaded (503) or rate limited, each call is retried once on `GEMINI_FALLBA
   and every model call inside it is a response row (provider, model, the messages sent with the
   image replaced by a marker, the reply, finish reason, tokens, latency, errors, including
   fallback retries). Logging is best effort and never blocks an upload.
-- **Sign-up rules** (`allowed_signup_domains`, `whitelisted_emails`): with rows in either table,
-  a *new* account needs an email on an allowed domain or on the whitelist; existing accounts
-  always keep signing in, and with both tables empty anyone can join. Checked in `/auth/callback`
+- **Sign-in rules** (`allowed_signup_domains`, `whitelisted_emails`): with rows in either table,
+  every sign-in needs an email on an allowed domain or on the whitelist, whether or not the
+  account already exists; with both tables empty anyone can sign in. Checked in `/auth/callback`
   before the token is exchanged (`src/lib/signup-rules.ts`).
 
 Until the SQL has been run, the app behaves as before: prompts come from the code, nothing is
-logged, and sign-ups are open.
+logged, and anyone can sign in.
 
 ## How sign-in works
 

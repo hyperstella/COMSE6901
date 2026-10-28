@@ -160,9 +160,9 @@ create index if not exists llm_responses_created_idx on public.llm_responses (cr
 -- ---------------------------------------------------------------------------
 -- Who may sign up
 -- ---------------------------------------------------------------------------
--- With no rows in either table, anyone can sign up. Otherwise a new account
--- needs an email on an allowed domain or on the whitelist. Existing accounts
--- always keep signing in.
+-- With no rows in either table, anyone can sign in. Otherwise every sign-in
+-- needs an email on an allowed domain or on the whitelist, whether or not the
+-- account already exists.
 
 create table if not exists public.allowed_signup_domains (
   id         uuid primary key default gen_random_uuid(),
@@ -312,5 +312,5 @@ $notes$Probably an American elm, fairly confident from the vase-shaped crown and
 '{"name": "Walter", "age": 72, "species": "Probably an American elm", "bio": "Leaning toward Butler since before your parents met.", "prompts": [{"prompt": "My toxic trait is", "answer": "Leaning over the library like I have a reading to finish."}, {"prompt": "Typical Sunday", "answer": "Holding up a hammock and one iced coffee somebody swore they would come back for."}, {"prompt": "My most irrational fear", "answer": "Leaf blowers at seven in the morning. Not irrational, actually."}, {"prompt": "Two truths and a lie", "answer": "I have two squirrels in a custody dispute, I shed samaras on purpose, I have never seen a finals week."}, {"prompt": "I''ll fall for you if", "answer": "You sit on my bench and read something other than your phone."}]}'::jsonb
 where not exists (select 1 from public.ai_generation_examples);
 
--- No sign-up rules are seeded: with both tables empty, anyone can sign up.
--- Add domains or addresses in the admin panel to restrict new accounts.
+-- No sign-in rules are seeded: with both tables empty, anyone can sign in.
+-- Add domains or addresses in the admin panel to restrict who can.
