@@ -1,6 +1,8 @@
 import { getVercelOidcToken } from "@vercel/oidc";
 import OpenAI from "openai";
 import { z } from "zod";
+import type { Example, ModelConfig, StepConfig, Term } from "./chain";
+import type { Recorder } from "./observability";
 import type { TreeProfile } from "./types";
 
 /**
@@ -13,10 +15,16 @@ import type { TreeProfile } from "./types";
  * code talk to a local Ollama server in development and, in production, to
  * Vercel AI Gateway (no API key: it authenticates with the deployment's OIDC
  * token) or Google's Gemini API. Pick one with LLM_PROVIDER (see README).
+ *
+ * The prompts, models and providers can also come from the database (a
+ * StepConfig from lib/chain.ts, configured in the admin panel). Without one,
+ * or with LLM_PROVIDER set, the constants and the env provider below are used.
+ * Every model call can be logged through a Recorder (lib/observability.ts).
  */
 
 type Provider = {
-  name: "ollama" | "gemini" | "gateway";
+  /** The provider slug: ollama, gemini, gateway, or whatever the admin panel calls it. */
+  name: string;
   client: OpenAI;
   visionModel: string;
   textModel: string;
@@ -24,9 +32,22 @@ type Provider = {
   fallbackModel?: string;
   /** Extra request fields only this provider understands. */
   extra: (step: "describe" | "write") => Record<string, unknown>;
+  /** Ask for token usage on streams (OpenAI-compatible providers that support stream_options). */
+  streamUsage?: boolean;
 };
 
 export class UploadError extends Error {}
+
+/** Options every chain step accepts, on top of its positional arguments. */
+export type CallOptions = {
+  signal?: AbortSignal;
+  /** The step's prompts, model and settings from the admin panel; the code's defaults otherwise. */
+  step?: StepConfig;
+  terms?: Term[];
+  examples?: Example[];
+  recorder?: Recorder;
+  requestId?: string | null;
+};
 
 function getProvider(): Provider | null {
   const name = (
@@ -47,6 +68,7 @@ function getProvider(): Provider | null {
       textModel: model,
       fallbackModel: process.env.AI_GATEWAY_FALLBACK_MODEL ?? "google/gemini-3.5-flash-lite",
       extra: (step) => ({ reasoning_effort: step === "describe" ? "low" : "medium" }),
+      streamUsage: true,
     };
   }
 
@@ -82,14 +104,56 @@ function getProvider(): Provider | null {
   return null;
 }
 
+/**
+ * A provider built from the admin panel's llm_models / llm_providers rows.
+ * Null when its API key isn't in the environment, so the env default is used.
+ */
+function providerFromModel(model: ModelConfig, fallback: ModelConfig | null): Provider | null {
+  const p = model.provider;
+  let apiKey: string | (() => Promise<string>);
+  if (p.authKind === "oidc") {
+    apiKey = process.env.AI_GATEWAY_API_KEY ?? (() => getVercelOidcToken());
+  } else if (p.authKind === "api_key") {
+    const key = p.apiKeyEnv ? process.env[p.apiKeyEnv] : undefined;
+    if (!key) return null;
+    apiKey = key;
+  } else {
+    apiKey = "none"; // required by the client, ignored by the server
+  }
+
+  const effort = (step: "describe" | "write") => {
+    if (model.reasoningEffort && model.reasoningEffort !== "none") return model.reasoningEffort;
+    if (p.slug === "gateway" || p.slug === "gemini") return step === "describe" ? "low" : "medium";
+    return null;
+  };
+
+  return {
+    name: p.slug,
+    client: new OpenAI({ apiKey, baseURL: p.baseUrl }),
+    visionModel: model.name,
+    textModel: model.name,
+    fallbackModel: fallback && fallback.provider.slug === p.slug ? fallback.name : undefined,
+    extra: (step) => {
+      const e = effort(step);
+      return e ? { reasoning_effort: e } : {};
+    },
+    streamUsage: p.slug === "gateway",
+  };
+}
+
 export function llmLabel() {
   const p = getProvider();
   if (!p) return null;
   return p.visionModel === p.textModel ? p.visionModel : `${p.visionModel} → ${p.textModel}`;
 }
 
-function provider() {
-  const p = getProvider();
+/**
+ * LLM_PROVIDER in the environment wins (local development); otherwise the
+ * step's model from the database; otherwise the env default.
+ */
+function provider(step?: StepConfig) {
+  const fromDb = !process.env.LLM_PROVIDER && step?.model ? providerFromModel(step.model, step.fallbackModel) : null;
+  const p = fromDb ?? getProvider();
   if (!p) throw new UploadError("No LLM provider is configured.");
   return p;
 }
@@ -129,82 +193,101 @@ function explain(error: unknown, p: Provider): never {
   throw error;
 }
 
+// ---------------------------------------------------------------------------
+// Logging
+// ---------------------------------------------------------------------------
+
+type Messages = OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+
+/** The messages as sent, with image bytes replaced by a marker. */
+function sanitize(messages: Messages) {
+  return messages.map((m) =>
+    Array.isArray(m.content)
+      ? { ...m, content: m.content.map((part) => (part.type === "image_url" ? { type: "image_url", image_url: "[image]" } : part)) }
+      : m,
+  );
+}
+
+const errorText = (error: unknown) =>
+  error instanceof OpenAI.APIError ? `${error.status ?? ""} ${error.message}`.trim() : error instanceof Error ? error.message : String(error);
+
+type Usage = { prompt_tokens?: number; completion_tokens?: number } | null | undefined;
+
+/** Writes one llm_responses row, if this call is being recorded. */
+function record(
+  opts: CallOptions,
+  log: {
+    stepKind: string;
+    provider: string;
+    model: string;
+    messages: Messages;
+    startedAt: number;
+    response?: string | null;
+    finishReason?: string | null;
+    usage?: Usage;
+    error?: unknown;
+  },
+) {
+  if (!opts.recorder || !opts.requestId) return Promise.resolve();
+  return opts.recorder.response(opts.requestId, {
+    stepId: opts.step?.id ?? null,
+    stepKind: log.stepKind,
+    provider: log.provider,
+    model: log.model,
+    messages: sanitize(log.messages),
+    response: log.response ?? null,
+    finishReason: log.finishReason ?? null,
+    promptTokens: log.usage?.prompt_tokens ?? null,
+    completionTokens: log.usage?.completion_tokens ?? null,
+    latencyMs: Date.now() - log.startedAt,
+    status: log.error === undefined ? "ok" : "error",
+    error: log.error === undefined ? null : errorText(log.error),
+  });
+}
+
+/** One non-streaming call, logged as its own row whether it succeeds or fails. */
+async function complete(
+  p: Provider,
+  stepKind: string,
+  model: string,
+  params: Omit<OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, "model">,
+  opts: CallOptions,
+) {
+  const startedAt = Date.now();
+  try {
+    const completion = await p.client.chat.completions.create({ ...params, model }, { signal: opts.signal });
+    const choice = completion.choices[0];
+    await record(opts, {
+      stepKind,
+      provider: p.name,
+      model,
+      messages: params.messages,
+      startedAt,
+      response: choice?.message?.content,
+      finishReason: choice?.finish_reason,
+      usage: completion.usage,
+    });
+    return completion;
+  } catch (error) {
+    await record(opts, { stepKind, provider: p.name, model, messages: params.messages, startedAt, error });
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Prompts
+// ---------------------------------------------------------------------------
+
 const DESCRIBE_SYSTEM = `You are a field botanist taking notes on one tree on Columbia University's campus. A comedy writer will turn your notes into the tree's dating profile without ever seeing the photo, so they depend on you for every detail that could be funny.
 
 Write one paragraph of 80 to 140 words in plain prose, with no lists or headings. Cover the likely species and how sure you are; its size and a rough sense of its age; its shape and posture (leaning, lopsided, majestic, scraggly); bark, leaves, flowers or fruit, and what season it looks like; its condition; what is around it (buildings, benches, paths, people, squirrels, signs); the light and weather; and anything odd, charming or ironic. Describe what you can see rather than guessing, and do not identify real people by name. Do not make jokes yourself.
 
 If there is no tree or large plant in the photo, reply with exactly NO_TREE and nothing else. If the photo is sexually explicit or shows graphic violence or gore, reply with exactly NOT_SUITABLE and nothing else.`;
 
+const DESCRIBE_USER = "Take your field notes on this tree.";
+
 const SENTINELS = ["NOT_SUITABLE", "NO_TREE"];
 const HOLD = Math.max(...SENTINELS.map((s) => s.length)) + 4;
-
-export type ImageInput = {
-  data: string; // base64, no data: prefix
-  mediaType: "image/jpeg" | "image/png" | "image/webp";
-};
-
-/**
- * Step 1: image -> text. Streams the field notes through onText as they are
- * written and resolves with the full text.
- */
-export async function describeImage(
-  image: ImageInput,
-  onText: (delta: string) => void,
-  signal?: AbortSignal,
-): Promise<string> {
-  const p = provider();
-  let text = "";
-  let released = false;
-
-  try {
-    const stream = await withFallback(p, p.visionModel, (model) => p.client.chat.completions.create(
-      {
-        model,
-        stream: true,
-        temperature: 0.4,
-        max_completion_tokens: 2000,
-        messages: [
-          { role: "system", content: DESCRIBE_SYSTEM },
-          {
-            role: "user",
-            content: [
-              { type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.data}` } },
-              { type: "text", text: "Take your field notes on this tree." },
-            ],
-          },
-        ],
-        ...p.extra("describe"),
-      },
-      { signal },
-    ));
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (!delta) continue;
-      text += delta;
-      if (released) {
-        onText(delta);
-      } else if (text.length > HOLD && !SENTINELS.some((s) => text.trimStart().startsWith(s))) {
-        // Held back until now so a sentinel reply never reaches the UI.
-        released = true;
-        onText(text);
-      }
-    }
-  } catch (error) {
-    explain(error, p);
-  }
-
-  const description = text.trim();
-  if (description.startsWith("NO_TREE")) {
-    throw new UploadError("We couldn't spot a tree in that photo. Treendr is trees only.");
-  }
-  if (description.startsWith("NOT_SUITABLE")) {
-    throw new UploadError("That photo isn't right for Treendr. Try a different one.");
-  }
-  if (!description) throw new UploadError("The model couldn't describe this photo.");
-  if (!released) onText(text);
-  return description;
-}
 
 export const PROFILE_PROMPTS = [
   "My most irrational fear",
@@ -245,7 +328,7 @@ Write the profile in the tree's own voice:
 - age: its age in years, estimated from the notes. Playful but plausible.
 - species: from the notes. If they're unsure, say "probably" (for example "Probably a London plane").
 - bio: one line, under 15 words.
-- prompts: exactly 5 answers, each to a different prompt from this list: ${PROFILE_PROMPTS.join("; ")}.
+- prompts: exactly 5 answers, each to a different prompt from this list: {{prompts}}.
 
 Each answer is a caption people will vote on, so make every one funny:
 - Under 20 words. Short beats long.
@@ -257,6 +340,128 @@ Each answer is a caption people will vote on, so make every one funny:
 
 Reply with JSON only, shaped like {"name": "...", "age": 80, "species": "...", "bio": "...", "prompts": [{"prompt": "My most irrational fear", "answer": "..."}]}.`;
 
+const PROFILE_USER = `<field_notes>\n{{notes}}\n</field_notes>\n<location>{{spot}}, Columbia University</location>\n\nWrite this tree's profile.`;
+
+/** Fills {{notes}}, {{spot}} and {{prompts}} in a prompt template. */
+function fill(template: string, vars: Record<string, string>) {
+  const all: Record<string, string> = { prompts: PROFILE_PROMPTS.join("; "), ...vars };
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key: string) => (key in all ? all[key] : match));
+}
+
+/** The glossary and few-shot examples the admin panel adds to the writer's prompt. */
+function writerExtras(terms: Term[] = [], examples: Example[] = []) {
+  const parts: string[] = [];
+  if (terms.length) {
+    parts.push(
+      "Campus glossary (use these when they fit, in the tree's voice):\n" +
+        terms.map((t) => `- ${t.term}: ${t.definition}`).join("\n"),
+    );
+  }
+  for (const ex of examples.slice(0, 2)) {
+    parts.push(
+      `Example of field notes and the profile written from them:\n<field_notes>\n${ex.notes}\n</field_notes>\n<profile>\n${JSON.stringify(ex.profile)}\n</profile>`,
+    );
+  }
+  return parts.length ? `\n\n${parts.join("\n\n")}` : "";
+}
+
+export type ImageInput = {
+  data: string; // base64, no data: prefix
+  mediaType: "image/jpeg" | "image/png" | "image/webp";
+};
+
+/**
+ * Step 1: image -> text. Streams the field notes through onText as they are
+ * written and resolves with the full text.
+ */
+export async function describeImage(
+  image: ImageInput,
+  onText: (delta: string) => void,
+  signal?: AbortSignal,
+  options: CallOptions = {},
+): Promise<string> {
+  const opts: CallOptions = { ...options, signal: options.signal ?? signal };
+  const step = opts.step;
+  const p = provider(step);
+  const messages: Messages = [
+    { role: "system", content: step?.systemPrompt ?? DESCRIBE_SYSTEM },
+    {
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.data}` } },
+        { type: "text", text: fill(step?.userPrompt?.trim() || DESCRIBE_USER, {}) },
+      ],
+    },
+  ];
+  let text = "";
+  let released = false;
+  let model = p.visionModel;
+  let usage: Usage;
+  let finishReason: string | null = null;
+  let startedAt = Date.now();
+
+  try {
+    const stream = await withFallback(p, p.visionModel, async (m) => {
+      model = m;
+      startedAt = Date.now();
+      try {
+        return await p.client.chat.completions.create(
+          {
+            model: m,
+            stream: true,
+            temperature: step?.temperature ?? 0.4,
+            max_completion_tokens: step?.maxTokens ?? 2000,
+            messages,
+            ...(p.streamUsage ? { stream_options: { include_usage: true } } : {}),
+            ...p.extra("describe"),
+          },
+          { signal: opts.signal },
+        );
+      } catch (error) {
+        // The request itself failed (overloaded, refused, unreachable).
+        await record(opts, { stepKind: "describe", provider: p.name, model: m, messages, startedAt, error });
+        throw error;
+      }
+    });
+
+    try {
+      for await (const chunk of stream) {
+        if (chunk.usage) usage = chunk.usage;
+        const choice = chunk.choices[0];
+        if (choice?.finish_reason) finishReason = choice.finish_reason;
+        const delta = choice?.delta?.content;
+        if (!delta) continue;
+        text += delta;
+        if (released) {
+          onText(delta);
+        } else if (text.length > HOLD && !SENTINELS.some((s) => text.trimStart().startsWith(s))) {
+          // Held back until now so a sentinel reply never reaches the UI.
+          released = true;
+          onText(text);
+        }
+      }
+    } catch (error) {
+      // The stream broke part-way: log what we got.
+      await record(opts, { stepKind: "describe", provider: p.name, model, messages, startedAt, response: text, error });
+      throw error;
+    }
+    await record(opts, { stepKind: "describe", provider: p.name, model, messages, startedAt, response: text, finishReason, usage });
+  } catch (error) {
+    explain(error, p);
+  }
+
+  const description = text.trim();
+  if (description.startsWith("NO_TREE")) {
+    throw new UploadError("We couldn't spot a tree in that photo. Treendr is trees only.");
+  }
+  if (description.startsWith("NOT_SUITABLE")) {
+    throw new UploadError("That photo isn't right for Treendr. Try a different one.");
+  }
+  if (!description) throw new UploadError("The model couldn't describe this photo.");
+  if (!released) onText(text);
+  return description;
+}
+
 const clip = (s: string, n: number) => s.trim().replace(/^["“”']+|["“”']+$/g, "").trim().slice(0, n);
 
 /** Step 2: text -> a dating profile. The model sees only the notes, not the image. */
@@ -264,31 +469,37 @@ export async function writeProfile(
   description: string,
   spot: string,
   signal?: AbortSignal,
+  options: CallOptions = {},
 ): Promise<TreeProfile> {
-  const p = provider();
+  const opts: CallOptions = { ...options, signal: options.signal ?? signal };
+  const step = opts.step;
+  const p = provider(step);
+  const vars = { notes: description, spot };
+  const messages: Messages = [
+    { role: "system", content: fill(step?.systemPrompt ?? PROFILE_SYSTEM, vars) + writerExtras(opts.terms, opts.examples) },
+    { role: "user", content: fill(step?.userPrompt?.trim() || PROFILE_USER, vars) },
+  ];
   let content: string | null | undefined;
 
   try {
-    const completion = await withFallback(p, p.textModel, (model) => p.client.chat.completions.create(
-      {
+    const completion = await withFallback(p, p.textModel, (model) =>
+      complete(
+        p,
+        "write",
         model,
-        temperature: 0.9,
-        max_completion_tokens: 4000,
-        response_format: {
-          type: "json_schema",
-          json_schema: { name: "tree_profile", schema: z.toJSONSchema(Profile) },
-        },
-        messages: [
-          { role: "system", content: PROFILE_SYSTEM },
-          {
-            role: "user",
-            content: `<field_notes>\n${description}\n</field_notes>\n<location>${spot}, Columbia University</location>\n\nWrite this tree's profile.`,
+        {
+          temperature: step?.temperature ?? 0.9,
+          max_completion_tokens: step?.maxTokens ?? 4000,
+          response_format: {
+            type: "json_schema",
+            json_schema: { name: "tree_profile", schema: z.toJSONSchema(Profile) },
           },
-        ],
-        ...p.extra("write"),
-      },
-      { signal },
-    ));
+          messages,
+          ...p.extra("write"),
+        },
+        opts,
+      ),
+    );
     content = completion.choices[0]?.message?.content;
   } catch (error) {
     explain(error, p);
@@ -346,7 +557,13 @@ For every tree, give:
 Keep it good-natured; never comment on the person's looks or identity. Reply with JSON only, shaped like {"matches": [{"key": "t1", "score": 87, "reason": "..."}]}, with one entry per tree.`;
 
 /** Scores one person against up to 20 trees per model call. */
-export async function rateCompatibility(person: Person, trees: TreeForMatching[], signal?: AbortSignal) {
+export async function rateCompatibility(
+  person: Person,
+  trees: TreeForMatching[],
+  signal?: AbortSignal,
+  options: CallOptions = {},
+) {
+  const opts: CallOptions = { ...options, signal: options.signal ?? signal };
   const p = provider();
   const results = new Map<string, { score: number; reason: string }>();
 
@@ -368,23 +585,28 @@ export async function rateCompatibility(person: Person, trees: TreeForMatching[]
       (person.vibes.length ? `Vibes: ${person.vibes.join(", ")}\n` : "") +
       (person.hangout ? `Hangs out at: ${person.hangout}\n` : "") +
       `</person>`;
+    const messages: Messages = [
+      { role: "system", content: COMPAT_SYSTEM },
+      { role: "user", content: `${personText}\n\n${treeText}\n\nRate this person with each tree.` },
+    ];
 
     let content: string | null | undefined;
     try {
-      const completion = await withFallback(p, p.textModel, (model) => p.client.chat.completions.create(
-        {
+      const completion = await withFallback(p, p.textModel, (model) =>
+        complete(
+          p,
+          "compat",
           model,
-          temperature: 0.5,
-          max_completion_tokens: 4000,
-          response_format: { type: "json_schema", json_schema: { name: "compatibility", schema: z.toJSONSchema(Compat) } },
-          messages: [
-            { role: "system", content: COMPAT_SYSTEM },
-            { role: "user", content: `${personText}\n\n${treeText}\n\nRate this person with each tree.` },
-          ],
-          ...p.extra("describe"),
-        },
-        { signal },
-      ));
+          {
+            temperature: 0.5,
+            max_completion_tokens: 4000,
+            response_format: { type: "json_schema", json_schema: { name: "compatibility", schema: z.toJSONSchema(Compat) } },
+            messages,
+            ...p.extra("describe"),
+          },
+          opts,
+        ),
+      );
       content = completion.choices[0]?.message?.content;
     } catch (error) {
       explain(error, p);

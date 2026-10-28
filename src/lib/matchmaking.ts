@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
 import { rateCompatibility, type TreeForMatching } from "./llm";
+import { createRecorder } from "./observability";
 import { createAdminClient, getUserAndProfile } from "./supabase/server";
 import type { Card, Compat } from "./types";
 
@@ -87,13 +88,23 @@ export async function computeCompat(
     }));
   if (todo.length === 0) return new Map();
 
-  const scores = await rateCompatibility({ firstName, ...profile }, todo);
-  if (scores.size) {
-    const { error: saveError } = await admin
-      .from("tree_compat")
-      .upsert([...scores].map(([imageId, c]) => ({ user_id: userId, image_id: imageId, score: c.score, reason: c.reason })));
-    if (saveError) throw new Error(saveError.message);
+  // Logged like an upload, so the admin panel sees the matchmaker's calls too.
+  const recorder = createRecorder(admin);
+  const requestId = await recorder.start("compat", { userId, metadata: { trees: todo.length, missingOnly } });
+  let scores;
+  try {
+    scores = await rateCompatibility({ firstName, ...profile }, todo, undefined, { recorder, requestId });
+    if (scores.size) {
+      const { error: saveError } = await admin
+        .from("tree_compat")
+        .upsert([...scores].map(([imageId, c]) => ({ user_id: userId, image_id: imageId, score: c.score, reason: c.reason })));
+      if (saveError) throw new Error(saveError.message);
+    }
+  } catch (error) {
+    await recorder.finish(requestId, { status: "failed", error: error instanceof Error ? error.message : String(error) });
+    throw error;
   }
+  await recorder.finish(requestId, { status: "succeeded" });
   return scores;
 }
 

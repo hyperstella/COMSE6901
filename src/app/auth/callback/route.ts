@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isDeploymentOrigin, RELAY_COOKIE, unpackState } from "@/lib/auth-relay";
 import { NEXT_COOKIE, safeNextPath } from "@/lib/next-path";
+import { signupAllowed, tokenEmail } from "@/lib/signup-rules";
 
 /**
  * Where Google sends the signed-in user's ID token. Three ways in:
@@ -67,6 +68,11 @@ async function signIn(
   const response = NextResponse.redirect(new URL(next, request.url), 303);
   response.cookies.delete(NEXT_COOKIE);
   response.cookies.delete(RELAY_COOKIE);
+
+  // New accounts only for allowed domains or whitelisted addresses (set in
+  // the admin panel); existing accounts always get in.
+  const allowed = await signupAllowed(tokenEmail(token));
+  if (!allowed.ok) return fail(allowed.reason);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

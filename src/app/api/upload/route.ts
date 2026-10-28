@@ -1,6 +1,8 @@
 import { type NextRequest } from "next/server";
 import { describeSpot } from "@/lib/campus";
+import { loadChain } from "@/lib/chain";
 import { describeImage, llmLabel, UploadError, writeProfile } from "@/lib/llm";
+import { createRecorder } from "@/lib/observability";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { saveTree } from "@/lib/trees";
 import { DAILY_UPLOAD_LIMIT, type UploadEvent } from "@/lib/types";
@@ -66,6 +68,19 @@ export async function POST(request: NextRequest) {
   const spot = spotInput || describeSpot(mapX, mapY);
   const encoder = new TextEncoder();
 
+  // Which chain this upload runs through (from the admin panel's mix; the
+  // code's own prompts if none is configured), and the request log for it.
+  const chain = await loadChain(admin);
+  const recorder = createRecorder(admin);
+  const requestId = await recorder.start("tree", {
+    userId: user.id,
+    userEmail: user.email ?? null,
+    chainId: chain?.chain.id ?? null,
+    spot,
+    metadata: { width, height, mediaType, chain: chain?.chain.slug ?? null },
+  });
+  const stepOf = (kind: "describe" | "write") => chain?.steps.find((s) => s.kind === kind);
+
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: UploadEvent) =>
@@ -77,10 +92,17 @@ export async function POST(request: NextRequest) {
           { data: bytes.toString("base64"), mediaType },
           (delta) => send({ type: "description", delta }),
           request.signal,
+          { step: stepOf("describe"), recorder, requestId },
         );
 
         send({ type: "step", step: "write" });
-        const tree = await writeProfile(description, spot, request.signal);
+        const tree = await writeProfile(description, spot, request.signal, {
+          step: stepOf("write"),
+          terms: chain?.terms,
+          examples: chain?.examples,
+          recorder,
+          requestId,
+        });
         send({ type: "profile", profile: tree });
 
         send({ type: "step", step: "save" });
@@ -99,17 +121,20 @@ export async function POST(request: NextRequest) {
           mapY,
         });
         send({ type: "done", imageId });
+        await recorder.finish(requestId, { status: "succeeded", imageId });
       } catch (error) {
+        const message =
+          error instanceof UploadError
+            ? error.message
+            : "Something went wrong writing this tree's profile. Please try again.";
         if (!request.signal.aborted) {
           console.error("upload pipeline failed", error);
-          send({
-            type: "error",
-            message:
-              error instanceof UploadError
-                ? error.message
-                : "Something went wrong writing this tree's profile. Please try again.",
-          });
+          send({ type: "error", message });
         }
+        await recorder.finish(requestId, {
+          status: "failed",
+          error: request.signal.aborted ? "Cancelled: the user left before it finished." : error instanceof UploadError ? message : `${message} (${error instanceof Error ? error.message : String(error)})`,
+        });
       } finally {
         try {
           controller.close();

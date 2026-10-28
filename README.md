@@ -46,6 +46,7 @@ strictest rules the app still works under:
 | `profiles` | none | read and edit name and "About you" on **own row only** | sign-up trigger; avatar URL by server |
 | `tree_compat` (compatibility) | none | read **own rows only** | server only, from the AI matchmaker |
 | `restaurants` | read | read | nobody (seed data) |
+| `prompt_chains`, `prompt_chain_steps`, `prompt_chain_mix`, `llm_providers`, `llm_models`, `terms`, `ai_generation_examples`, `generation_requests`, `llm_responses`, `allowed_signup_domains`, `whitelisted_emails` | none | none | server only (service role); managed in the admin panel |
 
 Votes are written with the user's own session, so RLS (not app code) is what stops someone
 voting as another user. Users can't write captions or tallies directly, so they can't forge
@@ -71,6 +72,36 @@ is overloaded (503) or rate limited, each call is retried once on `GEMINI_FALLBA
 (default `gemini-3.5-flash-lite`). Each user can add
 10 trees per 24 hours.
 
+## Prompt chains, observability and sign-up rules
+
+`supabase/observability.sql` adds the tables behind the
+[admin panel](https://github.com/hyperstella/COMSE6901-admin-panel):
+
+- **Prompt chains** (`prompt_chains`, `prompt_chain_steps`): each chain is the two steps above,
+  with its own system prompts, user-prompt templates (`{{notes}}`, `{{spot}}`, `{{prompts}}`),
+  temperature, token limit and model per step. **`prompt_chain_mix`** gives each chain a weight;
+  every upload picks one chain with probability weight ÷ total (weight 0 switches a chain off),
+  so two prompt variants can be A/B tested. `src/lib/chain.ts` loads the pick; `src/lib/llm.ts`
+  runs it.
+- **LLM providers and models** (`llm_providers`, `llm_models`): the OpenAI-compatible endpoints
+  and model ids a step can use, with how each authenticates (an env var, the deployment's OIDC
+  token, or nothing). `LLM_PROVIDER` in the environment still overrides everything, which is how
+  local development stays on Ollama.
+- **Terms** (`terms`) and **examples** (`ai_generation_examples`): a glossary of campus lingo and
+  field-notes → profile pairs that are appended to the writer step's prompt while active.
+- **Observability** (`generation_requests`, `llm_responses`): every upload and every matchmaker
+  run is a request row (who, which chain, status, duration, the tree it produced or the error),
+  and every model call inside it is a response row (provider, model, the messages sent with the
+  image replaced by a marker, the reply, finish reason, tokens, latency, errors, including
+  fallback retries). Logging is best effort and never blocks an upload.
+- **Sign-up rules** (`allowed_signup_domains`, `whitelisted_emails`): with rows in either table,
+  a *new* account needs an email on an allowed domain or on the whitelist; existing accounts
+  always keep signing in, and with both tables empty anyone can join. Checked in `/auth/callback`
+  before the token is exchanged (`src/lib/signup-rules.ts`).
+
+Until the SQL has been run, the app behaves as before: prompts come from the code, nothing is
+logged, and sign-ups are open.
+
 ## How sign-in works
 
 1. `/login` shows Google's "Sign in with Google" button (Google Identity Services, redirect mode).
@@ -89,8 +120,9 @@ is overloaded (503) or rate limited, each call is retried once on `GEMINI_FALLBA
 ## Setup
 
 1. **Database:** run `supabase/profiles.sql`, then `supabase/captions.sql`, then
-   `supabase/matchmaking.sql`, in the Supabase SQL editor. (Until `matchmaking.sql` runs, the
-   app hides "About you" and compatibility.)
+   `supabase/matchmaking.sql`, then `supabase/observability.sql`, in the Supabase SQL editor.
+   (Until `matchmaking.sql` runs, the app hides "About you" and compatibility; until
+   `observability.sql` runs, prompts come from the code and nothing is logged.)
 2. **Google OAuth client** (Google Cloud Console → APIs & Services → Credentials → OAuth client ID →
    Web application):
    - Authorized JavaScript origins: `http://localhost`, `http://localhost:3000`, and your Vercel URL(s)
