@@ -312,11 +312,5 @@ $notes$Probably an American elm, fairly confident from the vase-shaped crown and
 '{"name": "Walter", "age": 72, "species": "Probably an American elm", "bio": "Leaning toward Butler since before your parents met.", "prompts": [{"prompt": "My toxic trait is", "answer": "Leaning over the library like I have a reading to finish."}, {"prompt": "Typical Sunday", "answer": "Holding up a hammock and one iced coffee somebody swore they would come back for."}, {"prompt": "My most irrational fear", "answer": "Leaf blowers at seven in the morning. Not irrational, actually."}, {"prompt": "Two truths and a lie", "answer": "I have two squirrels in a custody dispute, I shed samaras on purpose, I have never seen a finals week."}, {"prompt": "I''ll fall for you if", "answer": "You sit on my bench and read something other than your phone."}]}'::jsonb
 where not exists (select 1 from public.ai_generation_examples);
 
-insert into public.allowed_signup_domains (domain, note) values
-  ('columbia.edu', 'Columbia University'),
-  ('barnard.edu', 'Barnard College')
-on conflict (domain) do nothing;
-
-insert into public.whitelisted_emails (email, note) values
-  ('thisischw@gmail.com', 'Project owner')
-on conflict (email) do nothing;
+-- No sign-up rules are seeded: with both tables empty, anyone can sign up.
+-- Add domains or addresses in the admin panel to restrict new accounts.
