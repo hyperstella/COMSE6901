@@ -98,11 +98,15 @@ create table if not exists public.terms (
   id         uuid primary key default gen_random_uuid(),
   term       text not null check (char_length(term) between 1 and 60),
   definition text not null check (char_length(definition) between 1 and 300),
-  category   text not null default 'campus' check (category in ('campus', 'tree', 'dating', 'other')),
+  category   text not null default 'campus' check (category in ('campus', 'tree')),
   is_active  boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Only two categories (the first version also had 'dating' and 'other').
+alter table public.terms drop constraint if exists terms_category_check;
+alter table public.terms add constraint terms_category_check check (category in ('campus', 'tree'));
 
 -- Field notes paired with the profile we'd want written from them (few-shot
 -- examples for the writer step).
