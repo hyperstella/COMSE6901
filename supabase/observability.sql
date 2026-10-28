@@ -229,8 +229,8 @@ on conflict (slug) do nothing;
 
 insert into public.prompt_chain_steps (chain_id, position, kind, name, system_prompt, user_prompt, temperature, max_tokens, model_id, fallback_model_id)
 select c.id, s.position, s.kind, s.name, s.system_prompt, s.user_prompt, s.temperature, s.max_tokens,
-       (select id from public.llm_models m join public.llm_providers p on p.id = m.provider_id where p.slug = 'gateway' and m.name = 'google/gemini-3.8-flash'),
-       (select id from public.llm_models m join public.llm_providers p on p.id = m.provider_id where p.slug = 'gateway' and m.name = 'google/gemini-3.5-flash-lite')
+       (select m.id from public.llm_models m join public.llm_providers p on p.id = m.provider_id where p.slug = 'gateway' and m.name = 'google/gemini-3.8-flash'),
+       (select m.id from public.llm_models m join public.llm_providers p on p.id = m.provider_id where p.slug = 'gateway' and m.name = 'google/gemini-3.5-flash-lite')
   from (values
     ('classic', 1, 'describe', 'Field notes',
 $prompt$You are a field botanist taking notes on one tree on Columbia University's campus. A comedy writer will turn your notes into the tree's dating profile without ever seeing the photo, so they depend on you for every detail that could be funny.
