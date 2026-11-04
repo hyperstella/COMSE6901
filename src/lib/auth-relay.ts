@@ -11,8 +11,12 @@
  * Production and localhost keep the normal Google button.
  */
 
-/** The deployment's own preview URLs, and no one else's. */
-const DEPLOYMENT_HOST = /^comse-6901-[a-z0-9-]+-hyperstella\.vercel\.app$/;
+/**
+ * The deployment's own preview URLs, and the prompt chain tool (Treendr Chains,
+ * hyperstella/COMSE6901-prompt-chains), whose URLs sign in through here too.
+ * Nobody else's: both end in this team's slug, which no other Vercel team gets.
+ */
+const DEPLOYMENT_HOST = /^(comse-6901-[a-z0-9-]+-hyperstella|treendr-chains(-[a-z0-9-]+-hyperstella)?)\.vercel\.app$/;
 
 /** Holds `<state>.<nonce>` between /auth/google and the relayed callback. */
 export const RELAY_COOKIE = "google_relay";
