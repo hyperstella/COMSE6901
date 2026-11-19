@@ -2,15 +2,17 @@ import Link from "next/link";
 import CampusBook, { type BookTree } from "@/components/campus/CampusBook";
 import TreePhoto from "@/components/TreePhoto";
 import { getUserAndProfile } from "@/lib/supabase/server";
-import { byEligibility, type RankedTree } from "@/lib/types";
+import { rankedTrees } from "@/lib/rankings";
 import { instrumentSerif } from "./fonts";
 
 export default async function HomePage() {
   const { supabase } = await getUserAndProfile();
-  const { data, error } = await supabase.from("tree_rankings").select("*").returns<RankedTree[]>();
+  // The book shows at most 150 hearts, so 200 rows is plenty.
+  const { data, error } = await rankedTrees(supabase, [
+    "id", "tree_name", "tree_age", "species", "spot", "image_url", "likes", "passes", "map_x", "map_y",
+  ] as const);
   if (error) console.error("tree_rankings:", error.message);
-  const ranked = [...(data ?? [])].sort(byEligibility);
-  const trees: BookTree[] = ranked.map((t) => ({
+  const trees: BookTree[] = (data ?? []).map((t) => ({
     id: t.id,
     name: t.tree_name,
     age: t.tree_age,

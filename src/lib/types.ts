@@ -1,4 +1,4 @@
-/** One profile line to swipe on, joined with its tree (see swipe_queue in SQL). */
+/** One profile line to swipe on, joined with its tree (see swipe_deck in SQL). */
 export type Card = {
   caption_id: string;
   prompt: string | null;
@@ -59,11 +59,6 @@ export type UploadEvent =
   | { type: "error"; message: string };
 
 export const DAILY_UPLOAD_LIMIT = 10;
-
-/** Sort order for "most eligible": score, then likes, then oldest first. */
-export function byEligibility(a: RankedTree, b: RankedTree) {
-  return b.score - a.score || b.likes - a.likes || a.created_at.localeCompare(b.created_at);
-}
 
 /** How well a user and a tree fit, from the AI matchmaker (see supabase/matchmaking.sql). */
 export type Compat = { score: number; reason: string };

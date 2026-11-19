@@ -2,14 +2,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import TreePhoto from "@/components/TreePhoto";
-import { getMyDatingProfile, hasDatingProfile, loadCompat } from "@/lib/matchmaking";
+import { getMyDatingProfile, hasDatingProfile } from "@/lib/matchmaking";
 import { getUserAndProfile, isProfileComplete } from "@/lib/supabase/server";
-import { isMatch } from "@/lib/types";
+import { isMatch, type Compat } from "@/lib/types";
 
 export const metadata = { title: "Your garden" };
 
 type MyTree = { id: string; tree_name: string; tree_age: number; image_url: string };
-type MyVote = { vote: number; captions: { image_id: string; images: MyTree } };
+type MyLike = { captions: { image_id: string; images: MyTree } };
+type MyCompat = Compat & { images: MyTree };
 
 // Members-only page. The proxy redirects signed-out visitors to /login;
 // the check below is a second line of defense.
@@ -18,12 +19,15 @@ export default async function DashboardPage() {
   if (!user) redirect("/login?next=/dashboard");
   if (!isProfileComplete(profile)) redirect("/onboarding");
 
-  const [{ data: votes }, { data: mine }, dating, compat] = await Promise.all([
-    // RLS: only this user's own votes come back.
+  // RLS: only this user's own votes and scores come back. Passes are only
+  // counted; only liked lines need their tree, to find matches.
+  const [{ data: likedLines }, { count: passCount }, { data: mine }, dating, { data: scored }] = await Promise.all([
     supabase
       .from("caption_votes")
-      .select("vote, captions!inner(image_id, images!inner(id, tree_name, tree_age, image_url))")
-      .returns<MyVote[]>(),
+      .select("captions!inner(image_id, images!inner(id, tree_name, tree_age, image_url))")
+      .eq("vote", 1)
+      .returns<MyLike[]>(),
+    supabase.from("caption_votes").select("caption_id", { count: "exact", head: true }).eq("vote", -1),
     supabase
       .from("images")
       .select("id, tree_name, tree_age, image_url")
@@ -31,12 +35,18 @@ export default async function DashboardPage() {
       .order("created_at", { ascending: false })
       .returns<MyTree[]>(),
     getMyDatingProfile(),
-    loadCompat(supabase),
+    // Compatibility scores with their trees, best first, in one query.
+    supabase
+      .from("tree_compat")
+      .select("score, reason, images!inner(id, tree_name, tree_age, image_url)")
+      .order("score", { ascending: false })
+      .returns<MyCompat[]>(),
   ]);
   const about = hasDatingProfile(dating.profile);
+  const compat = new Map((scored ?? []).map((c) => [c.images.id, { score: c.score, reason: c.reason }]));
 
-  const likes = (votes ?? []).filter((v) => v.vote === 1);
-  const passes = (votes ?? []).length - likes.length;
+  const likes = likedLines ?? [];
+  const passes = passCount ?? 0;
 
   // A match: you liked a tree and it's into you too (see isMatch).
   const liked = new Map<string, { tree: MyTree; count: number }>();
@@ -49,12 +59,7 @@ export default async function DashboardPage() {
   const matches = [...liked.values()].filter((m) => isMatch(m.count > 0, compat.get(m.tree.id))).map((m) => m.tree);
 
   // Your most compatible trees, from the AI matchmaker.
-  const { data: allTrees } = compat.size
-    ? await supabase.from("images").select("id, tree_name, tree_age, image_url").in("id", [...compat.keys()]).returns<MyTree[]>()
-    : { data: [] as MyTree[] };
-  const picks = (allTrees ?? [])
-    .sort((a, b) => compat.get(b.id)!.score - compat.get(a.id)!.score)
-    .slice(0, 6);
+  const picks = (scored ?? []).slice(0, 6).map((c) => c.images);
   const scoreOf = (t: MyTree) => compat.get(t.id)?.score;
 
   const stats = [

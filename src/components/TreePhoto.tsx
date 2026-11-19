@@ -20,6 +20,7 @@ export default function TreePhoto({
 }: {
   src: string;
   alt: string;
+  /** Like next/image's `sizes`. A single px value ("48px") means a fixed-size thumbnail. */
   sizes: string;
   priority?: boolean;
   /** Pixels across in pixel mode. */
@@ -31,6 +32,10 @@ export default function TreePhoto({
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pixel = mode === "pixel";
+  // A fixed-size thumbnail (sizes="48px") only needs a 1x and a 2x copy.
+  // `fill` with `sizes` would list every width Next.js knows: 16 URLs per photo.
+  const fixed = /^(\d+)px$/.exec(sizes.trim());
+  const px = fixed ? Number(fixed[1]) : 0;
 
   useEffect(() => {
     if (!pixel) return;
@@ -61,7 +66,19 @@ export default function TreePhoto({
 
   return (
     <div ref={boxRef} className={`relative overflow-hidden bg-ink ${className}`}>
-      <Image src={src} alt={alt} fill sizes={sizes} priority={priority} draggable={false} className="object-cover" />
+      {px ? (
+        <Image
+          src={src}
+          alt={alt}
+          width={px}
+          height={px}
+          priority={priority}
+          draggable={false}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <Image src={src} alt={alt} fill sizes={sizes} priority={priority} draggable={false} className="object-cover" />
+      )}
       {pixel && (
         <canvas ref={canvasRef} aria-hidden className="absolute inset-0 h-full w-full [image-rendering:pixelated]" />
       )}

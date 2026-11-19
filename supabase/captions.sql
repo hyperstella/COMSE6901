@@ -215,6 +215,72 @@ $$;
 revoke all on function public.swipe_queue(integer) from public;
 grant execute on function public.swipe_queue(integer) to anon, authenticated;
 
+-- The swipe deck: one card per tree, showing its punch line (its best-received
+-- line, net likes, ties broken at random). Skips trees the caller has already
+-- voted on (any line) and any in exclude_ids (cards the browser already has);
+-- first_id goes on top. The rest in random order, at most max_count (<= 60).
+-- Does in one call what src/lib/deck.ts used to do by loading every tree,
+-- every line and every vote. SECURITY INVOKER and PL/pgSQL like swipe_queue,
+-- so anonymous callers never touch caption_votes.
+drop function if exists public.swipe_deck(integer, uuid[], uuid);
+create function public.swipe_deck(
+  max_count   integer default 30,
+  exclude_ids uuid[]  default '{}',
+  first_id    uuid    default null
+)
+returns table (
+  caption_id uuid,
+  prompt     text,
+  content    text,
+  upvotes    integer,
+  downvotes  integer,
+  image_id   uuid,
+  image_url  text,
+  width      integer,
+  height     integer,
+  tree_name  text,
+  tree_age   integer,
+  species    text,
+  spot       text,
+  map_x      real,
+  map_y      real
+)
+language plpgsql
+stable
+security invoker
+set search_path = ''
+as $$
+declare
+  skip uuid[] := coalesce(exclude_ids, '{}');
+begin
+  if auth.uid() is not null then
+    skip := skip || array(
+      select distinct c.image_id
+        from public.caption_votes v
+        join public.captions c on c.id = v.caption_id
+       where v.user_id = auth.uid()
+    );
+  end if;
+
+  return query
+    select p.id, p.prompt, p.content, p.upvotes, p.downvotes,
+           i.id, i.image_url, i.width, i.height,
+           i.tree_name, i.tree_age, i.species, i.spot, i.map_x, i.map_y
+      from (
+        select distinct on (c.image_id) c.id, c.image_id, c.prompt, c.content, c.upvotes, c.downvotes
+          from public.captions c
+         where not (c.image_id = any (skip))
+         order by c.image_id, c.score desc, random()
+      ) p
+      join public.images i on i.id = p.image_id
+     order by coalesce(i.id = first_id, false) desc, random()
+     limit least(greatest(max_count, 1), 60);
+end;
+$$;
+
+revoke all on function public.swipe_deck(integer, uuid[], uuid) from public;
+grant execute on function public.swipe_deck(integer, uuid[], uuid) to anon, authenticated;
+
 -- Each tree's score is how its profile lines were received. SECURITY INVOKER
 -- so it can never show more than the caller could read from the tables.
 create or replace view public.tree_rankings

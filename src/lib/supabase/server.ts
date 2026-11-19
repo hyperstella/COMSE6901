@@ -57,9 +57,16 @@ export function createAdminClient() {
   });
 }
 
+/** The "About you" columns (from supabase/matchmaking.sql), as stored. */
+export type AboutRow = { about: string | null; vibes: string[] | null; hangout: string | null };
+
+const PROFILE_COLUMNS = "id, email, first_name, last_name, avatar_url";
+
 /**
  * Returns the signed-in user and their profile row, or nulls. Cached per
- * request so the header and the page share one auth round trip.
+ * request so the header and the page share one auth round trip. The same
+ * query reads the "About you" columns for getMyDatingProfile, so pages don't
+ * read the profile twice; `about` is undefined if matchmaking.sql hasn't run.
  */
 export const getUserAndProfile = cache(async () => {
   const supabase = await createClient();
@@ -67,16 +74,24 @@ export const getUserAndProfile = cache(async () => {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return { supabase, user: null, profile: null };
+  if (!user) return { supabase, user: null, profile: null, about: null };
 
   // RLS lets a user read only their own profile row.
-  const { data: profile } = await supabase
+  const withAbout = await supabase
     .from("profiles")
-    .select("id, email, first_name, last_name, avatar_url")
+    .select(`${PROFILE_COLUMNS}, about, vibes, hangout`)
     .eq("id", user.id)
-    .maybeSingle<Profile>();
+    .maybeSingle<Profile & AboutRow>();
+  if (!withAbout.error) {
+    const row = withAbout.data;
+    if (!row) return { supabase, user, profile: null, about: null };
+    const { about, vibes, hangout, ...profile } = row;
+    return { supabase, user, profile: profile as Profile, about: { about, vibes, hangout } as AboutRow };
+  }
 
-  return { supabase, user, profile };
+  // The About columns don't exist yet: read the basics only.
+  const { data: profile } = await supabase.from("profiles").select(PROFILE_COLUMNS).eq("id", user.id).maybeSingle<Profile>();
+  return { supabase, user, profile, about: undefined };
 });
 
 export function isProfileComplete(profile: Profile | null) {

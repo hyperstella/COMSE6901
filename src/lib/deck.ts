@@ -29,11 +29,29 @@ export function punchLine(lines: Line[]) {
  * The swipe deck: one card per tree, showing only its punch line. Trees this
  * user has already liked or passed (on any line) never come back; `exclude`
  * drops trees the client already has or skipped. `first` goes on top.
+ *
+ * The database builds it (the swipe_deck function in supabase/captions.sql)
+ * and sends back just the cards. Until that SQL has been run, it falls back
+ * to building the deck here.
  */
 export async function buildDeck(
   supabase: SupabaseClient,
   userId: string | null,
-  { exclude = [], first = null, limit = 30 }: { exclude?: string[]; first?: string | null; limit?: number } = {},
+  options: { exclude?: string[]; first?: string | null; limit?: number } = {},
+): Promise<Card[]> {
+  const { exclude = [], first = null, limit = 30 } = options;
+  const { data, error } = await supabase.rpc("swipe_deck", { max_count: limit, exclude_ids: exclude, first_id: first });
+  if (!error) return (data ?? []) as Card[];
+  // PGRST202 / 42883: the function hasn't been created yet.
+  if (error.code !== "PGRST202" && error.code !== "42883") console.error("swipe_deck:", error.message);
+  return buildDeckHere(supabase, userId, options);
+}
+
+/** The old way: loads up to 500 trees with every line, and all of this user's votes. */
+async function buildDeckHere(
+  supabase: SupabaseClient,
+  userId: string | null,
+  { exclude = [], first = null, limit = 30 }: { exclude?: string[]; first?: string | null; limit?: number },
 ): Promise<Card[]> {
   const [{ data: trees }, { data: voted }] = await Promise.all([
     supabase

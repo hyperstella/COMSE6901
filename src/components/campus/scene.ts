@@ -1520,6 +1520,7 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
       pinSprites.push(sprite);
     });
     layoutTrees();
+    needsRender = true;
   }
 
   // ---------------------------------------------------------------- lamps
@@ -1586,11 +1587,19 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
   const gtao = new GTAOPass(scene, camera, 1, 1);
   gtao.blendIntensity = 0.5;
   gtao.updateGtaoMaterial({ radius: 0.5, distanceExponent: 1.4, thickness: 1.2, scale: 1, samples: 12 });
+  // Ambient occlusion is the most expensive pass and barely shows at phone
+  // size, so phones skip it to save battery.
+  const useAO = !window.matchMedia("(max-width: 767px)").matches;
+  gtao.enabled = useAO;
   const output = new OutputPass();
   composer.addPass(renderPass);
   composer.addPass(pixelPass);
   composer.addPass(gtao);
   composer.addPass(output);
+
+  // Set whenever something changes outside the animation (time of day, pins,
+  // pixel mode, size), so the next frame draws it even if nothing is moving.
+  let needsRender = true;
 
   // ---------------------------------------------------------------- sizing
   const resize = () => {
@@ -1603,6 +1612,7 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     composer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    needsRender = true;
     if (!userMoved) {
       // Fit the whole book, with a margin, whatever the window shape.
       const distance = Math.max(53, 70 / camera.aspect + 4);
@@ -1682,6 +1692,13 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
   };
 
+  // Frames where only the ambient motion moves (hearts bobbing, falling
+  // leaves or snow) are drawn at about 30fps; anything the user does, and
+  // the book opening or closing, still gets every frame.
+  const AMBIENT_MS = 1000 / 30;
+  let lastRender = 0;
+  let running = false;
+
   const tick = () => {
     raf = requestAnimationFrame(tick);
     const now = performance.now();
@@ -1690,13 +1707,16 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     // collapse catch up in a step instead of crawling a frame at a time.
     const dt = now - last;
     last = now;
+    let busy = false;
 
     // Opening swings the page back first; closing lets the campus fold flat first.
     // The pop-ups follow the fold, not the clock, so a throttled tab can't
     // raise the campus through a page that is still shut.
+    const foldBefore = fold;
     if (open) fold = Math.min(1, fold + dt / 1100);
     if (open && fold < 0.86) popStart = now;
     else if (elapsed > 950 && treeGrow === 0) fold = Math.max(0, fold - dt / 1200);
+    if (fold !== foldBefore) busy = true;
     leaf.rotation.x = -Math.PI * easeInOut(fold);
     spine.visible = fold < 0.5;
     const t = open ? now - popStart : elapsed;
@@ -1704,18 +1724,22 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     for (const p of poppers) {
       const local = clamp((t - (open ? p.delay : p.delay * 0.4)) / 700, 0, 1);
       const target = open ? easeOutBack(local) : 1 - local;
-      p.object.scale.y = Math.max(0.001, open ? target : Math.min(p.object.scale.y, target));
+      const y = Math.max(0.001, open ? target : Math.min(p.object.scale.y, target));
+      if (y !== p.object.scale.y) busy = true;
+      p.object.scale.y = y;
     }
     const tTarget = open ? clamp((t - 700) / 1300, 0, 1) : 0;
     if (Math.abs(treeGrow - tTarget) > 0.001) {
       treeGrow = open ? tTarget : Math.max(0, treeGrow - dt / 300);
       layoutTrees();
+      busy = true;
     }
     pinSprites.forEach((h, i) => {
       const id = h.userData.id;
       const focus = id === hovered || id === highlighted;
       const shown = open && treeGrow > 0.9 && t > 2000 + i * 40;
       const target = shown ? (focus ? 1.25 : 0.95) : 0.001;
+      if (Math.abs(target - h.scale.x) > 0.002) busy = true;
       const s = h.scale.x + (target - h.scale.x) * 0.16;
       h.scale.setScalar(s);
       h.position.y = h.userData.base + (focus ? 0.18 : 0) + Math.sin(now / 420 + h.userData.phase) * 0.06;
@@ -1743,10 +1767,32 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
       if (fx === "fireflies") pMat.opacity = 0.5 + 0.5 * Math.sin(now / 300);
     }
 
-    controls.update();
-    composer.render();
+    // True while the camera moves: dragging, zooming, or damping to a stop.
+    if (controls.update()) busy = true;
+
+    const ambient = fx !== "none" || (open && pinSprites.length > 0);
+    // A few ms of slack so a 60Hz screen draws every other frame.
+    if (busy || needsRender || (ambient && now - lastRender >= AMBIENT_MS - 4)) {
+      composer.render();
+      lastRender = now;
+      needsRender = false;
+    }
   };
-  raf = requestAnimationFrame(tick);
+
+  // Nothing is drawn while the book is scrolled out of view.
+  const start = () => {
+    if (running) return;
+    running = true;
+    needsRender = true;
+    raf = requestAnimationFrame(tick);
+  };
+  const stop = () => {
+    running = false;
+    cancelAnimationFrame(raf);
+  };
+  const io = new IntersectionObserver(([entry]) => (entry.isIntersecting ? start() : stop()));
+  io.observe(canvas);
+  start();
 
   // ---------------------------------------------------------------- api
   function setTime(day: number, hour: number) {
@@ -1795,6 +1841,7 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     }
     pMat.needsUpdate = true;
     layoutTrees();
+    needsRender = true;
     return { season, sun: s, light: L };
   }
 
@@ -1803,12 +1850,14 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     open = next;
     openAt = performance.now();
     popStart = openAt;
+    needsRender = true;
   }
 
   function setPixel(on: boolean) {
     renderPass.enabled = !on;
     pixelPass.enabled = on;
-    gtao.enabled = !on;
+    gtao.enabled = useAO && !on;
+    needsRender = true;
   }
 
   return {
@@ -1818,9 +1867,11 @@ export function createCampusScene(canvas: HTMLCanvasElement, opts: SceneOptions)
     setPins,
     setHighlight(id) {
       highlighted = id;
+      needsRender = true;
     },
     dispose() {
-      cancelAnimationFrame(raf);
+      stop();
+      io.disconnect();
       ro.disconnect();
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerdown", onDown);

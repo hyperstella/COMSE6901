@@ -3,7 +3,8 @@ import CaptionVoter from "@/components/CaptionVoter";
 import Logo from "@/components/Logo";
 import TreePhoto from "@/components/TreePhoto";
 import { getUserAndProfile } from "@/lib/supabase/server";
-import { byEligibility, type RankedTree, type Vote } from "@/lib/types";
+import { rankedTrees } from "@/lib/rankings";
+import type { Vote } from "@/lib/types";
 
 export const metadata = { title: "The Grove" };
 
@@ -53,8 +54,10 @@ export default async function GrovePage({ searchParams }: PageProps<"/trees">) {
 
 async function TreeBoard() {
   const { supabase } = await getUserAndProfile();
-  const { data, error } = await supabase.from("tree_rankings").select("*").returns<RankedTree[]>();
-  const trees = [...(data ?? [])].sort(byEligibility);
+  const { data, error } = await rankedTrees(supabase, [
+    "id", "tree_name", "tree_age", "species", "spot", "image_url", "likes", "passes",
+  ] as const);
+  const trees = data ?? [];
 
   return (
     <>
@@ -134,30 +137,28 @@ type Line = {
   downvotes: number;
   created_at: string;
   images: { id: string; tree_name: string; image_url: string };
+  /** The signed-in user's vote, if any (RLS returns only their own rows). */
+  caption_votes?: { vote: number }[];
 };
 
 /** Every profile line across campus, best first: net likes, then likes, then oldest. */
 async function BestLines() {
   const { supabase, user } = await getUserAndProfile();
+  // Sorted and cut to 30 by the database, which reads them off captions_score_idx.
+  // Signed-in users get their own votes in the same query; anon can't read
+  // caption_votes at all, so they don't ask for it.
   const { data, error } = await supabase
     .from("captions")
-    .select("id, prompt, content, upvotes, downvotes, created_at, images!inner(id, tree_name, image_url)")
-    .returns<Line[]>();
-  const lines = [...(data ?? [])]
-    .sort(
-      (a, b) =>
-        b.upvotes - b.downvotes - (a.upvotes - a.downvotes) ||
-        b.upvotes - a.upvotes ||
-        a.created_at.localeCompare(b.created_at),
+    .select(
+      `id, prompt, content, upvotes, downvotes, created_at, images!inner(id, tree_name, image_url)${user ? ", caption_votes(vote)" : ""}`,
     )
-    .slice(0, 30);
-
-  // RLS returns only this user's own votes.
-  const { data: myVotes } =
-    user && lines.length
-      ? await supabase.from("caption_votes").select("caption_id, vote").in("caption_id", lines.map((l) => l.id))
-      : { data: [] as { caption_id: string; vote: number }[] };
-  const voteFor = new Map((myVotes ?? []).map((v) => [v.caption_id, v.vote as Vote]));
+    .order("score", { ascending: false })
+    .order("upvotes", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(30)
+    .returns<Line[]>();
+  const lines = data ?? [];
+  const voteFor = new Map(lines.map((l) => [l.id, (l.caption_votes?.[0]?.vote ?? 0) as Vote]));
 
   if (error) return <p className="card mt-8 p-4 text-center text-ink-2">The grove is resting right now. Try again in a moment.</p>;
   if (lines.length === 0) {

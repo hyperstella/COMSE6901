@@ -28,14 +28,10 @@ export type DatingProfile = { about: string; vibes: string[]; hangout: string };
  * supabase/matchmaking.sql has been run, so the feature can stay hidden.
  */
 export const getMyDatingProfile = cache(async (): Promise<{ ready: boolean; profile: DatingProfile | null }> => {
-  const { supabase, user } = await getUserAndProfile();
+  // Read by the same query as the rest of the profile (no extra round trip).
+  const { user, about: data } = await getUserAndProfile();
   if (!user) return { ready: true, profile: null };
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("about, vibes, hangout")
-    .eq("id", user.id)
-    .maybeSingle<{ about: string | null; vibes: string[] | null; hangout: string | null }>();
-  if (error) return { ready: false, profile: null };
+  if (data === undefined) return { ready: false, profile: null };
   return {
     ready: true,
     profile: data ? { about: data.about ?? "", vibes: data.vibes ?? [], hangout: data.hangout ?? "" } : null,

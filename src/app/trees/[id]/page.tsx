@@ -6,7 +6,8 @@ import ShareButton from "@/components/ShareButton";
 import TreePhoto from "@/components/TreePhoto";
 import { getMyDatingProfile, hasDatingProfile } from "@/lib/matchmaking";
 import { getUserAndProfile } from "@/lib/supabase/server";
-import { byEligibility, type RankedTree, type Vote } from "@/lib/types";
+import { rankOf } from "@/lib/rankings";
+import type { RankedTree, Vote } from "@/lib/types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -25,7 +26,16 @@ type TreeRow = {
   spot: string | null;
   map_x: number;
   map_y: number;
-  captions: { id: string; prompt: string | null; content: string; upvotes: number; downvotes: number; created_at: string }[];
+  captions: {
+    id: string;
+    prompt: string | null;
+    content: string;
+    upvotes: number;
+    downvotes: number;
+    created_at: string;
+    /** The signed-in user's vote, if any (RLS returns only their own rows). */
+    caption_votes?: { vote: number }[];
+  }[];
 };
 
 export async function generateMetadata({ params }: PageProps<"/trees/[id]">) {
@@ -44,36 +54,36 @@ export default async function TreePage({ params }: PageProps<"/trees/[id]">) {
   if (!UUID.test(id)) notFound();
 
   const { supabase, user } = await getUserAndProfile();
-  const [{ data: tree }, { data: rankings }] = await Promise.all([
+  // Everything this page needs that doesn't depend on anything else, at once.
+  // Signed-in users get their own votes inside the tree query (anon can't
+  // read caption_votes at all, so they don't ask for it).
+  const [{ data: tree }, { data: me }, dating, { data: compat }] = await Promise.all([
     supabase
       .from("images")
       .select(
-        "id, image_url, width, height, description, uploader_name, created_at, tree_name, tree_age, species, bio, spot, map_x, map_y, captions(id, prompt, content, upvotes, downvotes, created_at)",
+        `id, image_url, width, height, description, uploader_name, created_at, tree_name, tree_age, species, bio, spot, map_x, map_y, captions(id, prompt, content, upvotes, downvotes, created_at${user ? ", caption_votes(vote)" : ""})`,
       )
       .eq("id", id)
       .maybeSingle<TreeRow>(),
-    supabase.from("tree_rankings").select("*").returns<RankedTree[]>(),
+    supabase
+      .from("tree_rankings")
+      .select("likes, score, created_at")
+      .eq("id", id)
+      .maybeSingle<Pick<RankedTree, "likes" | "score" | "created_at">>(),
+    user ? getMyDatingProfile() : null,
+    // How you two fit, from the AI matchmaker (RLS: only your own row).
+    user
+      ? supabase.from("tree_compat").select("score, reason").eq("image_id", id).maybeSingle<{ score: number; reason: string }>()
+      : { data: null },
   ]);
   if (!tree) notFound();
 
-  const ranked = [...(rankings ?? [])].sort(byEligibility);
-  const rank = ranked.findIndex((t) => t.id === tree.id) + 1;
-  const me = ranked.find((t) => t.id === tree.id);
+  // Only this tree's place, not the whole leaderboard.
+  const rank = me ? await rankOf(supabase, me) : 0;
   const lines = [...tree.captions].sort((a, b) => a.created_at.localeCompare(b.created_at));
   const best = [...lines].sort((a, b) => b.upvotes - b.downvotes - (a.upvotes - a.downvotes))[0];
-
-  // RLS returns only this user's own votes.
-  const { data: myVotes } = user
-    ? await supabase.from("caption_votes").select("caption_id, vote").in("caption_id", lines.map((c) => c.id))
-    : { data: [] as { caption_id: string; vote: number }[] };
-  const voteFor = new Map((myVotes ?? []).map((v) => [v.caption_id, v.vote as Vote]));
-
-  // How you two fit, from the AI matchmaker (RLS: only your own row).
-  const dating = user ? await getMyDatingProfile() : null;
-  const { data: fit } =
-    dating && hasDatingProfile(dating.profile)
-      ? await supabase.from("tree_compat").select("score, reason").eq("image_id", tree.id).maybeSingle<{ score: number; reason: string }>()
-      : { data: null };
+  const voteFor = new Map(lines.map((c) => [c.id, (c.caption_votes?.[0]?.vote ?? 0) as Vote]));
+  const fit = dating && hasDatingProfile(dating.profile) ? compat : null;
 
   const added = new Date(tree.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 

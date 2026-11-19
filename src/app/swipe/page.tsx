@@ -16,13 +16,18 @@ export default async function SwipePage({ searchParams }: PageProps<"/swipe">) {
   const { supabase, user, profile } = await getUserAndProfile();
 
   const pinned = typeof tree === "string" && UUID.test(tree) ? tree : null;
-  let cards = await buildDeck(supabase, user?.id ?? null, { first: pinned });
+  // The deck, your "About you" and your compatibility scores don't depend on
+  // each other, so they load at the same time.
+  const [deck, dating, scores] = await Promise.all([
+    buildDeck(supabase, user?.id ?? null, { first: pinned }),
+    user ? getMyDatingProfile() : null,
+    user ? loadCompat(supabase) : null,
+  ]);
 
   // Your best fits first, with some shuffle so it isn't the same order every time.
-  const dating = user ? await getMyDatingProfile() : null;
   const about = dating && hasDatingProfile(dating.profile) ? dating.profile : null;
-  const compat = about ? await loadCompat(supabase) : new Map<string, Compat>();
-  if (compat.size) cards = rankByCompat(cards, compat, pinned);
+  const compat = about && scores ? scores : new Map<string, Compat>();
+  const cards = compat.size ? rankByCompat(deck, compat, pinned) : deck;
   // Trees added since this user's scores were made get scored after the response.
   if (user && about && cards.some((c) => !compat.has(c.image_id))) {
     after(() => computeCompat(user.id, profile?.first_name ?? "", about, { missingOnly: true }).catch(() => {}));
