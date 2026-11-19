@@ -4,12 +4,24 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import CampusPlan from "@/components/CampusPlan";
 import Logo from "@/components/Logo";
+import ProfileEditor from "@/components/ProfileEditor";
 import TreePhoto from "@/components/TreePhoto";
 import { describeSpot } from "@/lib/campus";
+import { publishDraft, rewriteDraftLine } from "@/lib/profile-actions";
+import { type DirectionId, type EditableProfile, HINT_MAX, profileProblem, TREE_VIBES, type VibeId } from "@/lib/profile-options";
 import { errorSound, readySound } from "@/lib/sfx";
 import type { TreeProfile, UploadEvent } from "@/lib/types";
 
-type Phase = "pick" | "prepping" | "describing" | "writing" | "saving" | "done" | "error";
+type Phase = "pick" | "prepping" | "describing" | "writing" | "draft" | "publishing" | "done" | "error";
+
+/** The AI's profile as a draft the uploader can edit. */
+const toEditable = (p: TreeProfile): EditableProfile => ({
+  name: p.name,
+  age: p.age,
+  species: p.species,
+  bio: p.bio,
+  lines: p.prompts.map((l) => ({ prompt: l.prompt, answer: l.answer, original: l.answer })),
+});
 
 const MAX_EDGE = 1568; // plenty for vision models, small enough to upload fast
 
@@ -49,7 +61,11 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
   const [pin, setPin] = useState<{ x: number; y: number } | null>(null);
   const [spot, setSpot] = useState("");
   const [notes, setNotes] = useState("");
-  const [profile, setProfile] = useState<TreeProfile | null>(null);
+  const [vibe, setVibe] = useState<VibeId | null>(null);
+  const [hint, setHint] = useState("");
+  const [draft, setDraft] = useState<EditableProfile | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const [treeId, setTreeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -57,8 +73,10 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
   const [line, setLine] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** The shrunken photo the draft was written for; publishing sends these same bytes. */
+  const blobRef = useRef<Blob | null>(null);
 
-  const working = phase === "prepping" || phase === "describing" || phase === "writing" || phase === "saving";
+  const working = phase === "prepping" || phase === "describing" || phase === "writing" || phase === "publishing";
   const outOfTickets = remaining <= 0;
 
   useEffect(() => {
@@ -102,7 +120,12 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
     setPin(null);
     setSpot("");
     setNotes("");
-    setProfile(null);
+    setVibe(null);
+    setHint("");
+    setDraft(null);
+    setToken(null);
+    setPublishError(null);
+    blobRef.current = null;
     setTreeId(null);
     setError(null);
     setPhase("pick");
@@ -113,13 +136,16 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
     if (!file || !pin || working) return;
     setError(null);
     setNotes("");
-    setProfile(null);
+    setDraft(null);
+    setToken(null);
+    setPublishError(null);
     setPhase("prepping");
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
       const { blob, width, height } = await prepare(file);
+      blobRef.current = blob;
       const form = new FormData();
       form.append("image", blob, "tree.jpg");
       form.append("width", String(width));
@@ -127,6 +153,8 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
       form.append("map_x", pin.x.toFixed(4));
       form.append("map_y", pin.y.toFixed(4));
       form.append("spot", spot.trim());
+      if (vibe) form.append("vibe", vibe);
+      if (hint.trim()) form.append("hint", hint.trim());
 
       const res = await fetch("/api/upload", { method: "POST", body: form, signal: controller.signal });
       if (!res.ok || !res.body) {
@@ -148,28 +176,70 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
           if (!raw.trim()) continue;
           const event = JSON.parse(raw) as UploadEvent;
           if (event.type === "step") {
-            setPhase(event.step === "describe" ? "describing" : event.step === "write" ? "writing" : "saving");
+            setPhase(event.step === "describe" ? "describing" : "writing");
           } else if (event.type === "description") {
             setNotes((n) => n + event.delta);
-          } else if (event.type === "profile") {
-            setProfile(event.profile);
-          } else if (event.type === "done") {
+          } else if (event.type === "draft") {
             finished = true;
-            setTreeId(event.imageId);
-            setPhase("done");
-            setRemaining((r) => Math.max(0, r - 1));
+            setDraft(toEditable(event.profile));
+            setToken(event.token);
+            setPhase("draft");
             readySound();
           } else if (event.type === "error") {
             throw new Error(event.message);
           }
         }
       }
-      if (!finished) throw new Error("The connection dropped before the profile was saved. Try again.");
+      if (!finished) throw new Error("The connection dropped before the profile was written. Try again.");
     } catch (e) {
       if (controller.signal.aborted) return;
       errorSound();
       setError(e instanceof Error ? e.message : "Something went wrong.");
       setPhase("error");
+    }
+  };
+
+  const rewrite = async (i: number, direction: DirectionId) => {
+    const line = draft?.lines[i];
+    if (!token || !line) return { ok: false as const, error: "This draft is gone. Start over." };
+    const res = await rewriteDraftLine({ token, prompt: line.prompt, current: line.answer, direction });
+    if (res.ok) setToken(res.token);
+    return res;
+  };
+
+  const publish = async () => {
+    if (!draft || !token || !blobRef.current || phase === "publishing") return;
+    const problem = profileProblem(draft);
+    if (problem) {
+      setPublishError(problem);
+      return;
+    }
+    setPublishError(null);
+    setPhase("publishing");
+    const form = new FormData();
+    form.append("token", token);
+    form.append("image", blobRef.current, "tree.jpg");
+    form.append(
+      "profile",
+      JSON.stringify({
+        name: draft.name.trim(),
+        age: draft.age,
+        species: draft.species.trim(),
+        bio: draft.bio.trim(),
+        lines: draft.lines.map((l) => ({ prompt: l.prompt, answer: l.answer.trim() })),
+      }),
+    );
+    try {
+      const res = await publishDraft(form);
+      if (!res.ok) throw new Error(res.error);
+      setTreeId(res.imageId);
+      setPhase("done");
+      setRemaining((r) => Math.max(0, r - 1));
+      readySound();
+    } catch (e) {
+      errorSound();
+      setPublishError(e instanceof Error ? e.message : "Couldn't publish your tree. Try again.");
+      setPhase("draft");
     }
   };
 
@@ -244,6 +314,38 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
             />
           </label>
 
+          <details className="group mt-4 rounded-2xl border border-line px-4 py-3">
+            <summary className="cursor-pointer list-none text-sm [&::-webkit-details-marker]:hidden font-semibold text-ink-2 hover:text-ink">
+              <span className="mr-1 inline-block transition-transform group-open:rotate-90">›</span> Give the AI a nudge (optional)
+              {vibe && <span className="ml-2 font-normal text-ink-3">· {TREE_VIBES.find((v) => v.id === vibe)?.label}</span>}
+            </summary>
+            <p className="mt-3 text-xs text-ink-3">Pick a personality, or leave it to the AI. You can edit every line before it goes live.</p>
+            <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Personality">
+              {TREE_VIBES.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  aria-pressed={vibe === v.id}
+                  title={v.guide}
+                  onClick={() => setVibe(vibe === v.id ? null : v.id)}
+                  // `!`: the global .chip rule would otherwise win over these colors.
+                  className={`chip transition-colors ${vibe === v.id ? "border-ink! bg-ink! text-paper!" : "hover:text-ink"}`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+            <label className="mt-3 block text-xs text-ink-3">
+              Anything the AI should know about this tree?
+              <input
+                value={hint}
+                onChange={(e) => setHint(e.target.value.slice(0, HINT_MAX))}
+                placeholder="Everyone naps under it during finals"
+                className="field mt-1.5 text-sm"
+              />
+            </label>
+          </details>
+
           {error && <p role="alert" className="shake mt-4 rounded-xl bg-like/15 p-3 text-sm text-ink">{error}</p>}
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -261,7 +363,8 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
 
   // ------------------------------------------------- step 2: watch the chain
   const step1 = phase === "describing" || phase === "prepping" ? "active" : notes ? "done" : "waiting";
-  const step2 = phase === "writing" ? "active" : profile ? "done" : "waiting";
+  const step2 = phase === "writing" ? "active" : draft ? "done" : "waiting";
+  const editing = draft && (phase === "draft" || phase === "publishing");
 
   return (
     <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
@@ -287,22 +390,36 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
         </Step>
 
         <Step n={2} title="Dating profile" tag="words → jokes" state={step2}>
-          <p className="mt-2 text-sm text-ink-3">The writer only sees the notes above, never the photo.</p>
-          {profile ? (
+          <p className="mt-2 text-sm text-ink-3">
+            {editing
+              ? "Here's the AI's draft. Change anything you like, or have the AI redo a line. Nothing goes live until you publish."
+              : "The writer only sees the notes above, never the photo."}
+          </p>
+          {editing ? (
+            <div className="pop-in mt-4">
+              <ProfileEditor
+                value={draft}
+                onChange={(update) => setDraft((d) => (d ? update(d) : d))}
+                onRewrite={rewrite}
+                canRemove
+                disabled={phase === "publishing"}
+              />
+            </div>
+          ) : draft ? (
             <div className="mt-4">
               <p className="display pop-in text-5xl italic">
-                {profile.name}, {profile.age}
+                {draft.name}, {draft.age}
               </p>
               <p className="pop-in mt-1 text-ink-2" style={{ "--delay": "0.1s" } as React.CSSProperties}>
-                {profile.species}
+                {draft.species}
               </p>
-              {profile.bio && (
+              {draft.bio && (
                 <p className="display pop-in mt-2 text-xl" style={{ "--delay": "0.2s" } as React.CSSProperties}>
-                  “{profile.bio}”
+                  “{draft.bio}”
                 </p>
               )}
               <ul className="mt-4 space-y-3">
-                {profile.prompts.map((p, i) => (
+                {draft.lines.map((p, i) => (
                   <li key={p.prompt} className="card pop-in p-3" style={{ "--delay": `${0.3 + i * 0.15}s` } as React.CSSProperties}>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-3">{p.prompt}</p>
                     <p className="display mt-1 text-2xl leading-tight">{p.answer}</p>
@@ -330,16 +447,39 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
           </div>
         )}
 
-        {phase === "done" && treeId && profile && (
+        {editing && (
+          <div className="card sticky bottom-[calc(var(--tabbar)+0.75rem)] z-10 p-4 shadow-lg">
+            {publishError && (
+              <p role="alert" className="shake mb-3 rounded-xl bg-like/15 p-3 text-sm text-ink">
+                {publishError}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={publish} disabled={phase === "publishing"} className="btn btn-like text-lg">
+                {phase === "publishing" ? "Publishing…" : `Publish ${draft.name.trim() || "your tree"}`}
+              </button>
+              <button onClick={reset} disabled={phase === "publishing"} className="btn btn-paper">
+                Start over
+              </button>
+            </div>
+          </div>
+        )}
+
+        {phase === "done" && treeId && draft && (
           <div className="card pop-in p-5">
-            <p className="display text-4xl italic text-like">{profile.name} is on Treendr!</p>
-            <p className="mt-1 text-ink-2">Their profile is live. Be the first to swipe on their lines.</p>
+            <p className="display text-4xl italic text-like">{draft.name} is on Treendr!</p>
+            <p className="mt-1 text-ink-2">
+              Their profile is live. Be the first to swipe on their lines. You can still edit a line until someone votes on it.
+            </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link href={`/swipe?tree=${treeId}`} className="btn btn-like">
-                Swipe on {profile.name}
+                Swipe on {draft.name}
               </Link>
               <Link href={`/trees/${treeId}`} className="btn btn-paper">
                 See the profile
+              </Link>
+              <Link href={`/trees/${treeId}/edit`} className="btn btn-paper">
+                Edit profile
               </Link>
               {remaining > 0 && (
                 <button onClick={reset} className="btn btn-paper">

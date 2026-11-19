@@ -16,6 +16,19 @@ three.js.
   2. a separate text-only call turns those notes, and only the notes, into a Hinge-style
      profile: a name, an age, a bio and prompt answers. Each answer is a caption to vote on.
 
+  Uploaders stay in charge of the profile:
+  - **Before writing** (optional, folded away): pick a personality (hopeless romantic, grumpy
+    old soul, …) and give the AI a one-line hint about the tree. Both go to the writer step.
+  - **The draft**: the profile comes back as a draft, not a published tree. Every field and
+    line can be edited or removed, and any line can go back to the AI for another take
+    ("funnier", "shorter", …) without redoing the rest. Nothing is saved until **Publish**.
+    The draft lives in the browser with a signed token (`src/lib/drafts.ts`), so the server
+    only trusts its own notes and photo hash, and publishing twice makes one tree.
+  - **After publishing** (`/trees/[id]/edit`, uploader only): name, age, species and bio can
+    change any time; a line can change until someone votes on it, so votes always match the
+    text people saw. Changed lines are flagged `edited_by_uploader` if
+    `supabase/profile_editing.sql` has been run.
+
   The photo goes to Supabase Storage; the notes, profile and captions go to the database.
 - **The Grove** (`/trees`, `/trees/[id]`): the leaderboard, and each tree's profile, where you
   can change or take back your votes line by line.
@@ -68,8 +81,11 @@ runs against:
 | `gemini` | optional alternative | `GEMINI_API_KEY` (free key from [Google AI Studio](https://aistudio.google.com/apikey)), `GEMINI_MODEL` (default `gemini-3.8-flash`) |
 
 If `LLM_PROVIDER` is unset, Gemini is used when `GEMINI_API_KEY` is set, and otherwise AI Gateway when running on Vercel. When the Gemini model
-is overloaded (503) or rate limited, each call is retried once on `GEMINI_FALLBACK_MODEL`
-(default `gemini-3.5-flash-lite`). Each user can add
+is overloaded or failing (429, 5xx), unreachable, or too slow, each call is retried once on `GEMINI_FALLBACK_MODEL`
+(default `gemini-3.5-flash-lite`). Too slow means no first chunk of the field notes within 30 s
+(`LLM_FIRST_CHUNK_MS`) or no whole answer within 45 s (`LLM_ANSWER_MS`); models can hang
+without ever answering. A model that failed is skipped for the next 5 minutes on that server
+instance, so the rest of the upload goes straight to the fallback. Each user can add
 10 trees per 24 hours.
 
 ## Prompt chains, observability and sign-in rules

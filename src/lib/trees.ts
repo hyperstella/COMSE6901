@@ -3,6 +3,9 @@ import type { TreeProfile } from "./types";
 
 export const BUCKET = "captioned-images";
 
+/** A column that supabase/profile_editing.sql adds isn't there yet. */
+export const missingColumn = (error: { code?: string } | null) => error?.code === "42703" || error?.code === "PGRST204";
+
 export type NewTree = {
   uploaderId: string | null;
   uploaderName: string | null;
@@ -13,8 +16,10 @@ export type NewTree = {
   height: number;
   /** Step 1 of the prompt chain: the vision model's field notes. */
   description: string;
-  /** Step 2: the dating profile written from those notes. */
+  /** Step 2: the dating profile written from those notes, as the uploader published it. */
   profile: TreeProfile;
+  /** Prompts whose answers the uploader changed from the AI's version. */
+  edited?: string[];
   spot: string;
   mapX: number;
   mapY: number;
@@ -56,9 +61,15 @@ export async function saveTree(admin: SupabaseClient, t: NewTree): Promise<strin
       .single();
     if (imageError) throw new Error(imageError.message);
 
-    const { error: captionError } = await admin
+    const rows = t.profile.prompts.map((p) => ({ image_id: image.id, prompt: p.prompt, content: p.answer }));
+    const edited = new Set(t.edited ?? []);
+    let { error: captionError } = await admin
       .from("captions")
-      .insert(t.profile.prompts.map((p) => ({ image_id: image.id, prompt: p.prompt, content: p.answer })));
+      .insert(rows.map((r) => ({ ...r, edited_by_uploader: edited.has(r.prompt) })));
+    if (missingColumn(captionError)) {
+      // supabase/profile_editing.sql hasn't been run yet: save without the flag.
+      ({ error: captionError } = await admin.from("captions").insert(rows));
+    }
     if (captionError) {
       await admin.from("images").delete().eq("id", image.id);
       throw new Error(captionError.message);

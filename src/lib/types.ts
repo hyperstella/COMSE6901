@@ -52,10 +52,10 @@ export type TreeProfile = {
 
 /** Newline-delimited JSON events streamed by POST /api/upload. */
 export type UploadEvent =
-  | { type: "step"; step: "describe" | "write" | "save" }
+  | { type: "step"; step: "describe" | "write" }
   | { type: "description"; delta: string }
-  | { type: "profile"; profile: TreeProfile }
-  | { type: "done"; imageId: string }
+  /** The profile as a draft: nothing is saved until the uploader publishes it with this token. */
+  | { type: "draft"; profile: TreeProfile; token: string }
   | { type: "error"; message: string };
 
 export const DAILY_UPLOAD_LIMIT = 10;

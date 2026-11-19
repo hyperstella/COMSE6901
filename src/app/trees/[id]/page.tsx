@@ -17,6 +17,7 @@ type TreeRow = {
   width: number;
   height: number;
   description: string;
+  uploader_id: string | null;
   uploader_name: string | null;
   created_at: string;
   tree_name: string;
@@ -61,7 +62,7 @@ export default async function TreePage({ params }: PageProps<"/trees/[id]">) {
     supabase
       .from("images")
       .select(
-        `id, image_url, width, height, description, uploader_name, created_at, tree_name, tree_age, species, bio, spot, map_x, map_y, captions(id, prompt, content, upvotes, downvotes, created_at${user ? ", caption_votes(vote)" : ""})`,
+        `id, image_url, width, height, description, uploader_id, uploader_name, created_at, tree_name, tree_age, species, bio, spot, map_x, map_y, captions(id, prompt, content, upvotes, downvotes, created_at${user ? ", caption_votes(vote)" : ""})`,
       )
       .eq("id", id)
       .maybeSingle<TreeRow>(),
@@ -180,6 +181,11 @@ export default async function TreePage({ params }: PageProps<"/trees/[id]">) {
               title={`${tree.tree_name}, ${tree.tree_age} on Treendr`}
               text={best ? `${tree.tree_name} on Treendr: “${best.content}”` : `Meet ${tree.tree_name} on Treendr`}
             />
+            {user && tree.uploader_id === user.id && (
+              <Link href={`/trees/${tree.id}/edit`} className="btn btn-paper">
+                Edit profile
+              </Link>
+            )}
           </div>
 
           <section className="mt-10">
