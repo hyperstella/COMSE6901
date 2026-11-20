@@ -304,6 +304,9 @@ grant select on public.tree_rankings to anon, authenticated;
 -- to upload to Storage and to insert AI-generated trees and profile lines, so
 -- users cannot forge captions or edit tallies through the public API.
 
+-- archive_trees.sql replaces the images and captions SELECT policies and the
+-- caption_votes INSERT policy below, to hide archived trees. Run it after this.
+
 -- images: anyone may look; nobody but the server may write.
 alter table public.images enable row level security;
 drop policy if exists "Anyone can view images" on public.images;

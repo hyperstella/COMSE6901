@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** How many photos this user uploaded in the last 24 hours. */
+/**
+ * How many photos this user uploaded in the last 24 hours. Pass the service-role
+ * client: archived trees still count, and RLS hides them from everyone else.
+ */
 export async function uploadsInLastDay(client: SupabaseClient, userId: string) {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { count } = await client

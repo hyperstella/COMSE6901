@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import AddTree from "@/components/AddTree";
 import { llmLabel } from "@/lib/llm";
-import { getUserAndProfile } from "@/lib/supabase/server";
+import { createAdminClient, getUserAndProfile } from "@/lib/supabase/server";
 import { DAILY_UPLOAD_LIMIT } from "@/lib/types";
 import { uploadsInLastDay } from "@/lib/uploads";
 
@@ -9,10 +9,10 @@ export const metadata = { title: "Add a tree" };
 
 export default async function UploadPage() {
   const model = llmLabel();
-  const { supabase, user } = await getUserAndProfile();
+  const { user } = await getUserAndProfile();
   if (!user) redirect("/login?next=/upload");
 
-  const used = await uploadsInLastDay(supabase, user.id);
+  const used = await uploadsInLastDay(createAdminClient(), user.id);
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6">

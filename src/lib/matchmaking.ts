@@ -64,6 +64,8 @@ export async function computeCompat(
     admin
       .from("images")
       .select("id, tree_name, tree_age, species, spot, bio, captions(prompt, content)")
+      // The service role sees archived trees too; nobody can swipe on those.
+      .is("archived_at", null)
       .order("created_at")
       .limit(200),
     missingOnly ? admin.from("tree_compat").select("image_id").eq("user_id", userId) : Promise.resolve({ data: [] }),

@@ -232,6 +232,32 @@ export async function rewriteLiveLine(input: { captionId: string; current: strin
 }
 
 /**
+ * Takes a tree the user added off Treendr (archived), or puts it back. Its lines
+ * and votes are kept; RLS hides archived trees from everyone (see archive_trees.sql).
+ */
+export async function setTreeArchived(treeId: string, archived: boolean): Promise<Result> {
+  const { user } = await signedInUser();
+  if (!user) return { ok: false, error: "Sign in to archive your tree." };
+  if (!UUID.test(treeId) || typeof archived !== "boolean") return { ok: false, error: "That tree doesn't exist." };
+
+  // Only the uploader's own row matches, so nobody can archive someone else's tree.
+  const { data, error } = await createAdminClient()
+    .from("images")
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq("id", treeId)
+    .eq("uploader_id", user.id)
+    .select("id");
+  if (error) {
+    console.error("setTreeArchived failed", error);
+    return { ok: false, error: "Couldn't update your tree. Try again." };
+  }
+  if (!data?.length) return { ok: false, error: "You can only archive trees you added." };
+
+  for (const path of ["/", "/trees", "/swipe", "/dashboard", `/trees/${treeId}`]) revalidatePath(path);
+  return { ok: true };
+}
+
+/**
  * Saves the uploader's edits to a live tree: name, age, species and bio any
  * time, lines only while nobody has voted on them. Returns the lines that
  * were locked (someone voted first).

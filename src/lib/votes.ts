@@ -48,8 +48,9 @@ export async function castVote(captionId: string, vote: Vote): Promise<VoteResul
         .eq("caption_id", captionId)
         .eq("user_id", user.id);
       if (updateError) return { ok: false, error: updateError.message };
-    } else if (error?.code === "23503") {
-      return { ok: false, error: "That tree no longer exists." };
+    } else if (error?.code === "23503" || error?.code === "42501") {
+      // Deleted (23503), or archived: RLS refuses votes on lines nobody can see (42501).
+      return { ok: false, error: "That tree isn't on Treendr anymore." };
     } else if (error) {
       return { ok: false, error: error.message };
     }
