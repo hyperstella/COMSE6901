@@ -178,79 +178,80 @@ export default function CampusBook({ serif, trees, error }: { serif: string; tre
         aria-label="A 3D pop-up book of Columbia's Morningside campus. Drag to turn it; hearts mark trees on Treendr."
       />
 
-      <div
-        className="pointer-events-none absolute left-4 top-4 max-w-[min(30rem,calc(100%-2rem))] sm:left-8 sm:top-7"
-        // A soft halo in the sky's color keeps the copy readable over the book.
-        style={{ textShadow: `0 0 18px ${backdrop[0]}, 0 0 4px ${backdrop[0]}` }}
-      >
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] opacity-60">The most eligible trees in Morningside Heights</p>
-        <h1 className="wordmark mt-2 text-6xl sm:text-[5.25rem]">Treendr</h1>
-        <p className="display mt-2 text-2xl sm:text-[1.9rem]">Single, rooted, and ready to mingle.</p>
-        <p className="mt-2 hidden max-w-sm text-sm opacity-75 sm:block">
-          Every tree on campus deserves a date. Snap one and AI writes its dating profile; swipe on its
-          best lines, and the most liked trees rise to the top.
-        </p>
-        <div className="pointer-events-auto mt-4 flex flex-wrap gap-2 [text-shadow:none]">
-          <Link href="/swipe" className="btn btn-like">
-            Start swiping
-          </Link>
-          <Link href="/upload" className="btn btn-paper">
-            Add a tree
-          </Link>
-        </div>
-      </div>
-
-      <aside className="card absolute right-4 top-4 hidden w-[17.5rem] p-4 text-ink md:block lg:right-6 lg:top-6">
-        <div className="flex items-baseline justify-between">
-          <h2 className="display text-2xl italic">Most eligible</h2>
-          <span className="text-xs text-ink-3">
-            {trees.length} tree{trees.length === 1 ? "" : "s"} · ♥ {totalLikes}
-          </span>
-        </div>
-        {error ? (
-          <p className="mt-3 text-sm text-ink-2">The grove is resting right now. Try again in a moment.</p>
-        ) : trees.length === 0 ? (
-          <p className="mt-3 text-sm text-ink-2">
-            Nobody&apos;s on the market yet.{" "}
-            <Link href="/upload" className="text-ink underline decoration-line underline-offset-4">
-              Add the first tree
-            </Link>{" "}
-            and it&apos;ll get a heart on the map.
+      {/* Same width and gutters as the header's nav, so the copy lines up under the logo. */}
+      <div className="pointer-events-none absolute inset-0 mx-auto max-w-6xl">
+        <div
+          className="absolute left-3 top-4 max-w-[min(30rem,calc(100%-1.5rem))] sm:left-6 sm:top-7"
+          // A soft halo in the sky's color keeps the copy readable over the book.
+          style={{ textShadow: `0 0 18px ${backdrop[0]}, 0 0 4px ${backdrop[0]}` }}
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] opacity-60">The most eligible trees in Morningside Heights</p>
+          <h1 className="wordmark mt-2 text-6xl sm:text-[5.25rem]">Treendr</h1>
+          <p className="display mt-2 text-2xl sm:text-[1.9rem]">Single, rooted, and out of your league.</p>
+          <p className="mt-2 hidden max-w-sm text-sm opacity-75 sm:block">
+            You walk past us every day on the way to Butler. We noticed. Snap one of us and write our
+            profile with AI, swipe on our best lines, and find out which of us would date you back.
+            (Don&apos;t get your hopes up.)
           </p>
-        ) : (
-          <ol className="mt-2 space-y-0.5" onMouseLeave={() => setHighlight(null)}>
-            {trees.slice(0, 5).map((t, i) => (
-              <li key={t.id}>
-                <Link
-                  href={`/trees/${t.id}`}
-                  onMouseEnter={() => setHighlight(t.id)}
-                  onFocus={() => setHighlight(t.id)}
-                  onBlur={() => setHighlight(null)}
-                  className="-mx-2 flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-ink/5"
-                >
-                  <span className={`display w-5 text-center text-2xl ${i === 0 ? "text-like" : "text-ink-3"}`}>{i + 1}</span>
-                  <TreePhoto src={t.imageUrl} alt="" sizes="40px" cols={10} className="h-10 w-10 shrink-0 rounded-lg" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">
-                      {t.name}, {t.age}
+          <div className="pointer-events-auto mt-4 flex flex-wrap gap-2 [text-shadow:none]">
+            <Link href="/swipe" className="btn btn-like">
+              Start swiping
+            </Link>
+            <Link href="/upload" className="btn btn-paper">
+              Add a tree
+            </Link>
+          </div>
+        </div>
+
+        <aside className="card pointer-events-auto absolute right-3 top-4 hidden w-[17.5rem] p-4 text-ink sm:right-6 md:block lg:top-6">
+          <div className="flex items-baseline justify-between">
+            <h2 className="display text-2xl italic">Most eligible</h2>
+            <span className="text-xs text-ink-3">
+              {trees.length} tree{trees.length === 1 ? "" : "s"} · ♥ {totalLikes}
+            </span>
+          </div>
+          {error ? (
+            <p className="mt-3 text-sm text-ink-2">The grove is resting right now. Try again in a moment.</p>
+          ) : trees.length === 0 ? (
+            <p className="mt-3 text-sm text-ink-2">
+              Nobody&apos;s on the market yet.{" "}
+              <Link href="/upload" className="text-ink underline decoration-line underline-offset-4">
+                Add the first tree
+              </Link>{" "}
+              and it&apos;ll get a heart on the map.
+            </p>
+          ) : (
+            <ol className="mt-2 space-y-0.5" onMouseLeave={() => setHighlight(null)}>
+              {trees.slice(0, 5).map((t, i) => (
+                <li key={t.id}>
+                  <Link
+                    href={`/trees/${t.id}`}
+                    onMouseEnter={() => setHighlight(t.id)}
+                    onFocus={() => setHighlight(t.id)}
+                    onBlur={() => setHighlight(null)}
+                    className="-mx-2 flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-ink/5"
+                  >
+                    <span className={`display w-5 text-center text-2xl ${i === 0 ? "text-like" : "text-ink-3"}`}>{i + 1}</span>
+                    <TreePhoto src={t.imageUrl} alt="" sizes="40px" cols={10} className="h-10 w-10 shrink-0 rounded-lg" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">
+                        {t.name}, {t.age}
+                      </span>
+                      <span className="block truncate text-xs text-ink-2">{t.species}</span>
                     </span>
-                    <span className="block truncate text-xs text-ink-2">{t.species}</span>
-                  </span>
-                  <span className="text-xs tabular-nums text-like">♥ {t.likes}</span>
-                </Link>
-              </li>
-            ))}
-          </ol>
-        )}
-        {trees.length > 5 && (
-          <Link href="/trees" className="mt-2 inline-block text-xs text-ink-2 underline decoration-line underline-offset-4 hover:text-ink">
-            See the whole grove
-          </Link>
-        )}
-        <p className="mt-3 border-t border-line pt-2 text-[11px] leading-snug text-ink-3">
-          Hover a heart to meet a tree, click to see its profile. Drag to turn the book; pinch or ⌘-scroll to zoom.
-        </p>
-      </aside>
+                    <span className="text-xs tabular-nums text-like">♥ {t.likes}</span>
+                  </Link>
+                </li>
+              ))}
+            </ol>
+          )}
+          {trees.length > 5 && (
+            <Link href="/trees" className="mt-2 inline-block text-xs text-ink-2 underline decoration-line underline-offset-4 hover:text-ink">
+              See the whole grove
+            </Link>
+          )}
+        </aside>
+      </div>
 
       {hovered && hover && (
         <div
