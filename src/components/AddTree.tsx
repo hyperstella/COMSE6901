@@ -23,6 +23,28 @@ const toEditable = (p: TreeProfile): EditableProfile => ({
   lines: p.prompts.map((l) => ({ prompt: l.prompt, answer: l.answer, original: l.answer })),
 });
 
+/** iPhones save photos as HEIC, which only Safari can open. */
+const isHeic = (f: File) => /^image\/hei[cf]/i.test(f.type) || /\.hei[cf]$/i.test(f.name);
+
+async function decodes(blob: Blob) {
+  try {
+    (await createImageBitmap(blob)).close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The photo as this browser can show and shrink it: as is, or a JPEG copy of an iPhone photo. */
+async function readable(f: File): Promise<File> {
+  if (await decodes(f)) return f;
+  if (!isHeic(f)) throw new Error("This browser can't open that photo.");
+  // The decoder is about 3 MB, so it only loads for photos that need it.
+  const { heicTo } = await import("heic-to");
+  const jpeg = await heicTo({ blob: f, type: "image/jpeg", quality: 0.92 });
+  return new File([jpeg], `${f.name.replace(/\.hei[cf]$/i, "")}.jpg`, { type: "image/jpeg" });
+}
+
 const MAX_EDGE = 1568; // plenty for vision models, small enough to upload fast
 
 /** Downscale in the browser so uploads stay small and fast. */
@@ -71,6 +93,9 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
   const [dragging, setDragging] = useState(false);
   const [remaining, setRemaining] = useState(initialRemaining);
   const [line, setLine] = useState(0);
+  const [converting, setConverting] = useState(false);
+  /** Counts photo picks, so a slow conversion can't replace a photo chosen after it. */
+  const picks = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   /** The shrunken photo the draft was written for; publishing sends these same bytes. */
@@ -87,26 +112,37 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const choose = useCallback((f: File | undefined) => {
+  const choose = useCallback(async (f: File | undefined) => {
     if (!f) return;
-    if (!f.type.startsWith("image/")) {
-      setError("That's not a photo. Try a JPEG, PNG or WebP.");
+    if (!f.type.startsWith("image/") && !isHeic(f)) {
+      setError("That's not a photo. Try a JPEG, PNG, WebP or iPhone photo.");
       return;
     }
+    const pick = ++picks.current;
     setError(null);
-    setFile(f);
-    setPreview((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return URL.createObjectURL(f);
-    });
+    setConverting(true);
+    try {
+      const usable = await readable(f);
+      if (pick !== picks.current) return; // a newer pick (or Start over) won
+      setFile(usable);
+      setPreview((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return URL.createObjectURL(usable);
+      });
+    } catch {
+      // Keep the photo that was there, if any.
+      if (pick === picks.current) setError("Couldn't open that photo. Try a JPEG, PNG, WebP or iPhone photo.");
+    } finally {
+      if (pick === picks.current) setConverting(false);
+    }
   }, []);
 
   // Paste a photo from the clipboard anywhere on the page.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       if (phase !== "pick") return;
-      const f = [...(e.clipboardData?.files ?? [])].find((x) => x.type.startsWith("image/"));
-      if (f) choose(f);
+      const f = [...(e.clipboardData?.files ?? [])].find((x) => x.type.startsWith("image/") || isHeic(x));
+      if (f) void choose(f);
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
@@ -114,6 +150,8 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
 
   const reset = () => {
     abortRef.current?.abort();
+    picks.current++;
+    setConverting(false);
     if (preview) URL.revokeObjectURL(preview);
     setFile(null);
     setPreview(null);
@@ -252,11 +290,25 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
         <section>
           <h2 className="display text-3xl italic">1. Snap the tree</h2>
           {preview ? (
-            <div className="mt-4">
-              <TreePhoto src={preview} alt="Your tree" sizes="(min-width: 1024px) 400px, 100vw" toggle className="photo aspect-[4/3] w-full" />
+            <div
+              className="mt-4"
+              // Dropping another photo on this one swaps it.
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                void choose(e.dataTransfer.files[0]);
+              }}
+            >
+              <TreePhoto
+                src={preview}
+                alt="Your tree"
+                sizes="(min-width: 1024px) 400px, 100vw"
+                toggle
+                className={`photo aspect-[4/3] w-full transition-opacity ${converting ? "animate-pulse opacity-60" : ""}`}
+              />
               <p className="mt-2 text-xs text-ink-3">Flip to Pixel to see the sprite your tree gets on the campus map.</p>
-              <button onClick={() => inputRef.current?.click()} className="btn btn-paper mt-4 text-sm">
-                Choose a different photo
+              <button onClick={() => inputRef.current?.click()} disabled={converting} className="btn btn-paper mt-4 text-sm">
+                {converting ? "Opening that photo…" : "Choose a different photo"}
               </button>
             </div>
           ) : (
@@ -271,15 +323,15 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
               onDrop={(e) => {
                 e.preventDefault();
                 setDragging(false);
-                choose(e.dataTransfer.files[0]);
+                void choose(e.dataTransfer.files[0]);
               }}
-              disabled={outOfTickets}
+              disabled={outOfTickets || converting}
               className={`well mt-4 flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 border-2 border-dashed p-6 text-center transition-colors ${
                 dragging ? "border-like bg-like/10" : "border-ink/15 hover:border-ink/30"
               } disabled:opacity-50`}
             >
               <Logo className="h-16 w-16" />
-              <span className="display text-3xl italic">{outOfTickets ? "That's enough trees for today" : dragging ? "Drop it!" : "Drop a tree photo"}</span>
+              <span className="display text-3xl italic">{outOfTickets ? "That's enough trees for today" : converting ? "Opening your photo…" : dragging ? "Drop it!" : "Drop a tree photo"}</span>
               <span className="text-sm text-ink-2">
                 {outOfTickets ? "You can add more tomorrow." : "or click to choose, or paste one"}
               </span>
@@ -288,10 +340,14 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.heic,.heif"
             className="sr-only"
             tabIndex={-1}
-            onChange={(e) => choose(e.target.files?.[0])}
+            onChange={(e) => {
+              void choose(e.target.files?.[0]);
+              // Clear it, so picking the same file again still counts as a change.
+              e.target.value = "";
+            }}
           />
           <p className="mt-3 text-sm text-ink-3">
             {remaining} of {limit} trees left today · JPEG, PNG, WebP or iPhone photos
@@ -349,7 +405,7 @@ export default function AddTree({ remaining: initialRemaining, limit, model }: {
           {error && <p role="alert" className="shake mt-4 rounded-xl bg-like/15 p-3 text-sm text-ink">{error}</p>}
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <button onClick={submit} disabled={!file || !pin || outOfTickets} className="btn btn-like text-lg">
+            <button onClick={submit} disabled={!file || !pin || outOfTickets || converting} className="btn btn-like text-lg">
               Write its dating profile
             </button>
             <span className="text-sm text-ink-3">
